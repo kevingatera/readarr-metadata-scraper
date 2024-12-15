@@ -38,12 +38,12 @@ export const getBook = async (id)=>{
             .map((i, el) => {
                 const $el = $(el);
                 const name = $el.find("span").text();
-                const url = $el.attr("href")
-                const id = (url.substring(url.lastIndexOf('/') + 1)).split('.')[0]
+                const url = $el.attr("href") || '';
+                const id = url ? parseInt((url.substring(url.lastIndexOf('/') + 1)).split('.')[0]) : 0;
                 return {
-                    id: parseInt(id),
-                    name: name,
-                    url: url,
+                    id: id || 0,
+                    name: name || "Unknown Author",
+                    url: url || "",
                 };
             })
             .toArray();
@@ -186,8 +186,10 @@ export const getBook = async (id)=>{
     const realBook= {
         Asin :  "",// unknown
         AverageRating :  parseInt(rating),
-        Contributors :  [{ForeignId: author[0].id,
-            Role:"Author"}],
+        Contributors :  author.length ? [{
+            ForeignId: author[0].id || 0,
+            Role: "Author"
+        }] : [],
         Description :  desc,
         EditionInformation : bookEdition,
         ForeignId : parseInt(id),
