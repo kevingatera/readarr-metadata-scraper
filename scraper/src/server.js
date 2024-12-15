@@ -5,6 +5,8 @@ import https from "https";
 import {getBook} from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
 
+const MAX_RETRIES = 5;
+const BASE_DELAY = 1000; // 1 second
 
 const privateKey  = fs.readFileSync('./certs/bookinfo-club.key', 'utf8');
 const certificate = fs.readFileSync('./certs/bookinfo-club.crt', 'utf8');
@@ -42,30 +44,41 @@ app.get('/v1/work/:id', async (req, res)=>{
     res.send(response)
 });
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(fetchFn, id) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            return await fetchFn(id);
+        } catch (error) {
+            if (attempt === MAX_RETRIES) throw error;
+            
+            const delay = BASE_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
+            console.log(`Attempt ${attempt} failed. Retrying in ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
 
 app.post('*', async (req, res)=>{
-    console.log('post body',req.body)
+    console.log('post body', req.body)
     const authors = {}
     const books = []
 
     for (const id of req.body) {
         try {
-            console.log('getting',id)
-            await delay(1000)
-            const bookResult = await getBook(id)
-            console.log('retrieved book:',bookResult)
+            console.log('getting', id)
+            const bookResult = await fetchWithRetry(getBook, id)
+            console.log('retrieved book:', bookResult)
             
             if (!(bookResult.author[0].id in authors)) {
-                const authorResult = await getAuthor(bookResult.author[0].id,bookResult.author[0].url)
+                const authorResult = await fetchWithRetry(getAuthor, bookResult.author[0].id, bookResult.author[0].url)
                 authors[bookResult.author[0].id] = authorResult
-                console.log('retrieved author:',authorResult)
+                console.log('retrieved author:', authorResult)
             }
             
             books.push(bookResult)
         } catch (error) {
-            console.error(`Failed to fetch book ${id}:`, error.message)
-            continue
+            console.error(`Completely failed to fetch book ${id}:`, error.message)
         }
     }
 
