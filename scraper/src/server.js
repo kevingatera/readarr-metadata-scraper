@@ -4,6 +4,7 @@ import http from "http";
 import https from "https";
 import {getBook} from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
+import { getFromCache, saveToCache } from './cache.js';
 
 const MAX_RETRIES = 5;
 const BASE_DELAY = 1000; // 1 second
@@ -46,9 +47,15 @@ app.get('/v1/work/:id', async (req, res)=>{
 
 
 async function fetchWithRetry(fetchFn, id) {
+    const cacheKey = `${fetchFn.name}_${id}`;
+    const cached = await getFromCache(cacheKey);
+    if (cached) return cached;
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            return await fetchFn(id);
+            const result = await fetchFn(id);
+            await saveToCache(cacheKey, result);
+            return result;
         } catch (error) {
             if (attempt === MAX_RETRIES) throw error;
             

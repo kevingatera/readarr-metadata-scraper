@@ -12,6 +12,8 @@ services:
   readarr-metadata-scraper:
     build: scraper
     container_name: readarr-metadata-scraper
+    volumes:
+      - ./cache:/opt/app/cache
     depends_on:
       - readarr
     networks:

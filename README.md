@@ -33,6 +33,16 @@ readarr-metadata-scraper:
 
 see the [docker-compose.yml](docker-compose.yml) for a working example. 
 
+### Cache Configuration
+
+The scraper caches responses for 24 hours in the `./cache` directory. Add this volume mapping to persist cache between restarts:
+
+```yaml
+    - ./cache:/opt/app/cache
+```
+
+You can configure the cache directory by setting `CACHE_DIR` environment variable.
+
 ### Acknowledgements 
 
 [Bilbioreads](https://biblioreads.eu.org/) for providing the GoodReads scraping code. 
