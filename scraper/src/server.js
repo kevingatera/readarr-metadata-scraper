@@ -16,8 +16,10 @@ function generateCacheKey(fetchFn, args) {
     return `${fetchFn.name}_${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
 }
 
-const MAX_RETRIES = 5;
-const BASE_DELAY = 1000; // 1 second
+const MAX_RETRIES = 10;
+const BASE_DELAY = 2000;
+const MAX_DELAY = 60000;
+const RATE_LIMIT_DELAY = 2000;
 
 const privateKey = fs.readFileSync('./certs/bookinfo-club.key', 'utf8');
 const certificate = fs.readFileSync('./certs/bookinfo-club.crt', 'utf8');
@@ -55,33 +57,6 @@ app.get('/v1/work/:id', async (req, res) => {
     res.send(response)
 });
 
-
-async function fetchWithRetry(fetchFn, ...args) {
-    const cacheKey = generateCacheKey(fetchFn, args);
-    const cached = await getFromCache(cacheKey);
-    if (cached) {
-        console.log(`Cache hit for ${fetchFn.name} with args: ${args}`);
-        return cached;
-    }
-    console.log(`Cache miss for ${fetchFn.name} with args: ${args}`);
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            const result = await fetchFn(...args);
-            await saveToCache(cacheKey, result);
-            return result;
-        } catch (error) {
-            if (attempt === MAX_RETRIES) throw error;
-
-            const delay = BASE_DELAY * Math.pow(2, attempt - 1);
-            console.log(`Attempt ${attempt} for ${fetchFn.name} failed. Retrying in ${delay}ms`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-}
-
-
-const RATE_LIMIT_DELAY = 2000; // 2 seconds between requests
 let lastRequestTime = 0;
 
 async function rateLimit() {
@@ -93,67 +68,130 @@ async function rateLimit() {
     lastRequestTime = Date.now();
 }
 
+async function fetchWithRetry(fetchFn, ...args) {
+    const cacheKey = generateCacheKey(fetchFn, args);
+    const cached = await getFromCache(cacheKey);
+    if (cached) {
+        console.log(`Cache hit for ${fetchFn.name} with args: ${args}`);
+        return cached;
+    }
+    console.log(`Cache miss for ${fetchFn.name} with args: ${args}`);
+
+    let lastError;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            await rateLimit();
+            const result = await fetchFn(...args);
+            await saveToCache(cacheKey, result);
+            return result;
+        } catch (error) {
+            lastError = error;
+            if (attempt === MAX_RETRIES) {
+                console.error(`All ${MAX_RETRIES} attempts failed for ${fetchFn.name}:`, error);
+                break;
+            }
+            
+            const delay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), MAX_DELAY);
+            console.log(`Attempt ${attempt} failed for ${fetchFn.name}. Retrying in ${delay/1000}s`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    
+    return createFallbackResponse(fetchFn, args);
+}
+
+function createFallbackResponse(fetchFn, args) {
+    const id = args[0];
+    if (fetchFn.name === 'getBook') {
+        return {
+            work: {
+                ForeignId: parseInt(id),
+                Title: `Unavailable Book ${id}`,
+                Url: `https://www.goodreads.com/book/show/${id}`,
+                Description: "This book is temporarily unavailable",
+                AverageRating: 0,
+                RatingCount: 0
+            },
+            author: [{
+                id: 0,
+                name: "Unknown Author",
+                url: ""
+            }]
+        };
+    }
+    if (fetchFn.name === 'getAuthor') {
+        return {
+            ForeignId: parseInt(id),
+            Name: "Unknown Author",
+            Description: "Author information temporarily unavailable",
+            AverageRating: 0,
+            RatingCount: 0,
+            Url: `https://www.goodreads.com/author/show/${id}`,
+            ImageUrl: "",
+            Series: null,
+            Works: null
+        };
+    }
+}
+
 async function batchFetchWithRetry(fetchFn, ids) {
-    // Deduplicate IDs
     const uniqueIds = [...new Set(ids)];
     const results = {};
-
+    
     for (const id of uniqueIds) {
-        const cacheKey = generateCacheKey(fetchFn, [id]);
-        const cached = await getFromCache(cacheKey);
-
-        if (cached) {
-            console.log(`Cache hit for ${fetchFn.name}(${id})`);
-            results[id] = cached;
-            continue;
-        }
-
         try {
-            await rateLimit(); // Rate limit uncached requests
             const result = await fetchWithRetry(fetchFn, id);
             results[id] = result;
         } catch (error) {
             console.error(`Failed to fetch ${id}:`, error);
+            results[id] = createFallbackResponse(fetchFn, [id]);
         }
     }
-
+    
     return results;
 }
 
 app.post('*', async (req, res) => {
-    console.log('post body', req.body);
+    try {
+        console.log('post body', req.body);
+        
+        const bookResults = await batchFetchWithRetry(getBook, req.body);
+        
+        const authorIds = [...new Set(
+            Object.values(bookResults)
+                .filter(book => book?.author?.[0])
+                .map(book => book.author[0].id)
+        )];
+        
+        const authorResults = await batchFetchWithRetry(getAuthor, authorIds);
+        
+        const works = Object.values(bookResults)
+            .filter(book => book?.work)
+            .map(({work}) => ({
+                ForeignId: work.ForeignId,
+                Title: work.Title,
+                Url: work.Url,
+                Genres: ["horror"],
+                RelatedWorks: [],
+                Books: [work],
+                Series: []
+            }));
 
-    // Batch fetch all books first
-    const bookResults = await batchFetchWithRetry(getBook, req.body);
-
-    // Extract unique author IDs
-    const authorIds = [...new Set(
-        Object.values(bookResults)
-            .filter(book => book?.author?.[0])
-            .map(book => book.author[0].id)
-    )];
-
-    // Batch fetch all authors
-    const authorResults = await batchFetchWithRetry(getAuthor, authorIds);
-
-    // Format response
-    const works = Object.values(bookResults).map(({ work }) => ({
-        ForeignId: work.ForeignId,
-        Title: work.Title,
-        Url: work.Url,
-        Genres: ["horror"],
-        RelatedWorks: [],
-        Books: [work],
-        Series: []
-    }));
-
-    const response = {
-        Works: works,
-        Series: [],
-        Authors: Object.values(authorResults)
-    };
-
-    res.send(response);
+        const response = {
+            Works: works,
+            Series: [],
+            Authors: Object.values(authorResults)
+        };
+        
+        res.send(response);
+    } catch (error) {
+        console.error('Error processing request:', error);
+        res.status(500).send({
+            Works: [],
+            Series: [],
+            Authors: []
+        });
+    }
 });
 
 const httpServer = http.createServer(app);
