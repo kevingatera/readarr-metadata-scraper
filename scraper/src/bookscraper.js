@@ -1,18 +1,34 @@
 import * as cheerio from 'cheerio';
 
+// Add at the top of bookscraper.js
+const FETCH_TIMEOUT = 10000; // 10 seconds
+const FETCH_OPTIONS = {
+    timeout: FETCH_TIMEOUT,
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+};
+
+async function fetchWithTimeout(url) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+    
+    try {
+        const response = await fetch(url, {
+            ...FETCH_OPTIONS,
+            signal: controller.signal
+        });
+        return await response.text();
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 //Modified from https://github.com/nesaku/BiblioReads/blob/main/pages/api/book-scraper.js
 export const getBook = async (id)=>{
-    const scrapeURL = `https://www.goodreads.com/book/show/${id}`
-        const response = await fetch(`${scrapeURL}`, {
-            method: "GET",
-            headers: new Headers({
-                "User-Agent":
-                    process.env.NEXT_PUBLIC_USER_AGENT ||
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
-            }),
-        });
-        const htmlString = await response.text();
-        const $ = cheerio.load(htmlString);
+    try {
+        const html = await fetchWithTimeout(`https://www.goodreads.com/book/show/${id}`);
+        const $ = cheerio.load(html);
         const cover = $(".ResponsiveImage").attr("src");
         const series = $("h3.Text__italic").text();
         const seriesURL = $("h3.Text__italic > a").attr("href");
@@ -189,6 +205,10 @@ export const getBook = async (id)=>{
         Url :  workURL,
     }
     return {work:realBook, author: author}
+    } catch (error) {
+        console.error(`Failed to fetch book ${id}:`, error.message);
+        throw error;
+    }
 }
 
 
