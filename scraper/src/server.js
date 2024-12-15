@@ -6,6 +6,16 @@ import {getBook} from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
 import { getFromCache, saveToCache } from './cache.js';
 
+import fs from 'fs/promises';
+const CACHE_DIR = process.env.CACHE_DIR || './cache';
+await fs.mkdir(CACHE_DIR, { recursive: true });
+
+import crypto from 'crypto';
+
+function generateCacheKey(fetchFn, args) {
+    return `${fetchFn.name}_${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
+}
+
 const MAX_RETRIES = 5;
 const BASE_DELAY = 1000; // 1 second
 
@@ -46,65 +56,69 @@ app.get('/v1/work/:id', async (req, res)=>{
 });
 
 
-async function fetchWithRetry(fetchFn, id) {
-    const cacheKey = `${fetchFn.name}_${id}`;
+async function fetchWithRetry(fetchFn, ...args) {
+    const cacheKey = generateCacheKey(fetchFn, args);
     const cached = await getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+        console.log(`Cache hit for ${fetchFn.name} with args: ${args}`);
+        return cached;
+    }
+    console.log(`Cache miss for ${fetchFn.name} with args: ${args}`);
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const result = await fetchFn(id);
+            const result = await fetchFn(...args);
             await saveToCache(cacheKey, result);
             return result;
         } catch (error) {
             if (attempt === MAX_RETRIES) throw error;
             
-            const delay = BASE_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
-            console.log(`Attempt ${attempt} failed. Retrying in ${delay}ms`);
+            const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+            console.log(`Attempt ${attempt} for ${fetchFn.name} failed. Retrying in ${delay}ms`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 }
 
-app.post('*', async (req, res)=>{
-    console.log('post body', req.body)
-    const authors = {}
-    const books = []
+app.post('*', async (req, res) => {
+    console.log('post body', req.body);
+    const authors = {};
+    const books = [];
 
     for (const id of req.body) {
         try {
-            console.log('getting', id)
-            const bookResult = await fetchWithRetry(getBook, id)
-            console.log('retrieved book:', bookResult)
+            console.log('getting', id);
+            const bookResult = await fetchWithRetry(getBook, id);
+            console.log('retrieved book:', bookResult);
             
             if (!(bookResult.author[0].id in authors)) {
-                const authorResult = await fetchWithRetry(getAuthor, bookResult.author[0].id, bookResult.author[0].url)
-                authors[bookResult.author[0].id] = authorResult
-                console.log('retrieved author:', authorResult)
+                const authorResult = await fetchWithRetry(getAuthor, bookResult.author[0].id, bookResult.author[0].url);
+                authors[bookResult.author[0].id] = authorResult;
+                console.log('retrieved author:', authorResult);
             }
             
-            books.push(bookResult)
+            books.push(bookResult);
         } catch (error) {
-            console.error(`Completely failed to fetch book ${id}:`, error.message)
+            console.error(`Completely failed to fetch book ${id}:`, error.message);
         }
     }
 
-    const works = books.map(({work})=>({
-        ForeignId:work.ForeignId,
+    const works = books.map(({ work }) => ({
+        ForeignId: work.ForeignId,
         Title: work.Title,
         Url: work.Url,
-        Genres:["horror"],
-        RelatedWorks:[],
-        Books:[work],
-        Series:[]
-    }))
+        Genres: ["horror"],
+        RelatedWorks: [],
+        Books: [work],
+        Series: [],
+    }));
 
     const response = {
-        Works:works,
-        Series:[],
-        Authors:Object.values(authors)
-    }
-    res.send(response)
+        Works: works,
+        Series: [],
+        Authors: Object.values(authors)
+    };
+    res.send(response);
 });
 
 const httpServer = http.createServer(app);
