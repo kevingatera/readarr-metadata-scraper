@@ -80,44 +80,79 @@ async function fetchWithRetry(fetchFn, ...args) {
     }
 }
 
-app.post('*', async (req, res) => {
-    console.log('post body', req.body);
-    const authors = {};
-    const books = [];
 
-    for (const id of req.body) {
+const RATE_LIMIT_DELAY = 2000; // 2 seconds between requests
+let lastRequestTime = 0;
+
+async function rateLimit() {
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY - timeSinceLastRequest));
+    }
+    lastRequestTime = Date.now();
+}
+
+async function batchFetchWithRetry(fetchFn, ids) {
+    // Deduplicate IDs
+    const uniqueIds = [...new Set(ids)];
+    const results = {};
+
+    for (const id of uniqueIds) {
+        const cacheKey = generateCacheKey(fetchFn, [id]);
+        const cached = await getFromCache(cacheKey);
+
+        if (cached) {
+            console.log(`Cache hit for ${fetchFn.name}(${id})`);
+            results[id] = cached;
+            continue;
+        }
+
         try {
-            console.log('getting', id);
-            const bookResult = await fetchWithRetry(getBook, id);
-            console.log('retrieved book:', bookResult);
-
-            if (!(bookResult.author[0].id in authors)) {
-                const authorResult = await fetchWithRetry(getAuthor, bookResult.author[0].id, bookResult.author[0].url);
-                authors[bookResult.author[0].id] = authorResult;
-                console.log('retrieved author:', authorResult);
-            }
-
-            books.push(bookResult);
+            await rateLimit(); // Rate limit uncached requests
+            const result = await fetchWithRetry(fetchFn, id);
+            results[id] = result;
         } catch (error) {
-            console.error(`Completely failed to fetch book ${id}:`, error.message);
+            console.error(`Failed to fetch ${id}:`, error);
         }
     }
 
-    const works = books.map(({ work }) => ({
+    return results;
+}
+
+app.post('*', async (req, res) => {
+    console.log('post body', req.body);
+
+    // Batch fetch all books first
+    const bookResults = await batchFetchWithRetry(getBook, req.body);
+
+    // Extract unique author IDs
+    const authorIds = [...new Set(
+        Object.values(bookResults)
+            .filter(book => book?.author?.[0])
+            .map(book => book.author[0].id)
+    )];
+
+    // Batch fetch all authors
+    const authorResults = await batchFetchWithRetry(getAuthor, authorIds);
+
+    // Format response
+    const works = Object.values(bookResults).map(({ work }) => ({
         ForeignId: work.ForeignId,
         Title: work.Title,
         Url: work.Url,
         Genres: ["horror"],
         RelatedWorks: [],
         Books: [work],
-        Series: [],
+        Series: []
     }));
 
     const response = {
         Works: works,
         Series: [],
-        Authors: Object.values(authors)
+        Authors: Object.values(authorResults)
     };
+
     res.send(response);
 });
 
