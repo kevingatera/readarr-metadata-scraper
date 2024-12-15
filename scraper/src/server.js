@@ -41,35 +41,44 @@ app.get('/v1/work/:id', async (req, res)=>{
     console.log(response)
     res.send(response)
 });
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 app.post('*', async (req, res)=>{
     console.log('post body',req.body)
-    // const books= []
     const authors = {}
+    const books = []
 
-    const books = await Promise.all(req.body.map(async (id)=>{
-        console.log('getting',id)
-        const bookResult = await getBook(id)
-        console.log('retrieved book:',bookResult)
-        if (!(bookResult.author[0].id in authors) ){
-            const authorResult= await getAuthor(bookResult.author[0].id,bookResult.author[0].url)
-            authors[bookResult.author[0].id] = authorResult
-            console.log('retrieved author:',authorResult)
+    for (const id of req.body) {
+        try {
+            console.log('getting',id)
+            await delay(1000)
+            const bookResult = await getBook(id)
+            console.log('retrieved book:',bookResult)
+            
+            if (!(bookResult.author[0].id in authors)) {
+                const authorResult = await getAuthor(bookResult.author[0].id,bookResult.author[0].url)
+                authors[bookResult.author[0].id] = authorResult
+                console.log('retrieved author:',authorResult)
+            }
+            
+            books.push(bookResult)
+        } catch (error) {
+            console.error(`Failed to fetch book ${id}:`, error.message)
+            continue
         }
-        return bookResult
+    }
+
+    const works = books.map(({work})=>({
+        ForeignId:work.ForeignId,
+        Title: work.Title,
+        Url: work.Url,
+        Genres:["horror"],
+        RelatedWorks:[],
+        Books:[work],
+        Series:[]
     }))
 
-    const works= books.map(({work})=>{
-        return {
-            ForeignId:work.ForeignId,
-            Title: work.title,
-            Url: work.Url,
-            Genres:["horror"],
-            RelatedWorks:[],
-            Books:[work],
-            Series:[],
-            // Authors:authors
-        }
-    })
     const response = {
         Works:works,
         Series:[],
