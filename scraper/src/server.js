@@ -1,12 +1,11 @@
 import express from 'express'
-import fs from "fs";
 import http from "http";
 import https from "https";
 import { getBook } from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
 import { getFromCache, saveToCache } from './cache.js';
 
-import fs from 'fs/promises';
+import fs from 'fs';
 const CACHE_DIR = process.env.CACHE_DIR || './cache';
 await fs.mkdir(CACHE_DIR, { recursive: true });
 
@@ -201,7 +200,15 @@ httpServer.listen(80, async () => {
     console.log('listening...')
 }
 );
-httpsServer.listen(443);
+try {
+    const privateKey = fs.readFileSync('./certs/bookinfo-club.key', 'utf8');
+    const certificate = fs.readFileSync('./certs/bookinfo-club.crt', 'utf8');
+    const credentials = { key: privateKey, cert: certificate };
+    const httpsServer = https.createServer(credentials, app);
+    httpsServer.listen(443);
+} catch (error) {
+    console.warn('SSL certificates not found, HTTPS server not started');
+}
 
 // app.listen(8816, async () => {
 //     console.log('listening')
