@@ -198,7 +198,7 @@ const httpServer = http.createServer(app);
 const httpsServer = https.createServer(credentials, app);
 
 httpServer.listen(80, async () => {
-    console.log('listening')
+    console.log('listening...')
 }
 );
 httpsServer.listen(443);
