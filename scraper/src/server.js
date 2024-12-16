@@ -6,8 +6,9 @@ import getAuthor from "./authorscraper.js";
 import { getFromCache, saveToCache } from './cache.js';
 
 import fs from 'fs';
+import { mkdir } from 'fs/promises';
 const CACHE_DIR = process.env.CACHE_DIR || './cache';
-await fs.mkdir(CACHE_DIR, { recursive: true });
+await mkdir(CACHE_DIR, { recursive: true });
 
 import crypto from 'crypto';
 
