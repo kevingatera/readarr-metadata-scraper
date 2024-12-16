@@ -2,9 +2,12 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const CACHE_DIR = process.env.CACHE_DIR || './cache';
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '86400000'); // 24h default
+const CACHE_ENABLED = process.env.CACHE_ENABLED !== 'false'; // enabled by default
 
 export async function getFromCache(key) {
+  if (!CACHE_ENABLED) return null;
+
   try {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     const data = await fs.readFile(filePath, 'utf8');
@@ -28,6 +31,8 @@ export async function getFromCache(key) {
 }
 
 export async function saveToCache(key, value) {
+  if (!CACHE_ENABLED) return;
+
   try {
     const filePath = path.join(CACHE_DIR, `${key}.json`);
     await fs.writeFile(filePath, JSON.stringify({
