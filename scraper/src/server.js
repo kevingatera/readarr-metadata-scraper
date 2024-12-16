@@ -90,13 +90,13 @@ async function fetchWithRetry(fetchFn, ...args) {
                 console.error(`All ${MAX_RETRIES} attempts failed for ${fetchFn.name}:`, error);
                 break;
             }
-            
+
             const delay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), MAX_DELAY);
-            console.log(`Attempt ${attempt} failed for ${fetchFn.name}. Retrying in ${delay/1000}s`);
+            console.log(`Attempt ${attempt} failed for ${fetchFn.name}. Retrying in ${delay / 1000}s`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
-    
+
     return createFallbackResponse(fetchFn, args);
 }
 
@@ -137,7 +137,7 @@ function createFallbackResponse(fetchFn, args) {
 async function batchFetchWithRetry(fetchFn, ids) {
     const uniqueIds = [...new Set(ids)];
     const results = {};
-    
+
     for (const id of uniqueIds) {
         try {
             const result = await fetchWithRetry(fetchFn, id);
@@ -147,27 +147,27 @@ async function batchFetchWithRetry(fetchFn, ids) {
             results[id] = createFallbackResponse(fetchFn, [id]);
         }
     }
-    
+
     return results;
 }
 
 app.post('*', async (req, res) => {
     try {
         console.log('post body', req.body);
-        
+
         const bookResults = await batchFetchWithRetry(getBook, req.body);
-        
+
         const authorIds = [...new Set(
             Object.values(bookResults)
                 .filter(book => book?.author?.[0])
                 .map(book => book.author[0].id)
         )];
-        
+
         const authorResults = await batchFetchWithRetry(getAuthor, authorIds);
-        
+
         const works = Object.values(bookResults)
             .filter(book => book?.work)
-            .map(({work}) => ({
+            .map(({ work }) => ({
                 ForeignId: work.ForeignId,
                 Title: work.Title,
                 Url: work.Url,
@@ -182,7 +182,7 @@ app.post('*', async (req, res) => {
             Series: [],
             Authors: Object.values(authorResults)
         };
-        
+
         res.send(response);
     } catch (error) {
         console.error('Error processing request:', error);
