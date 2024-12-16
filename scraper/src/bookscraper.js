@@ -12,7 +12,7 @@ const FETCH_OPTIONS = {
 async function fetchWithTimeout(url) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-    
+
     try {
         const response = await fetch(url, {
             ...FETCH_OPTIONS,
@@ -25,21 +25,34 @@ async function fetchWithTimeout(url) {
 }
 
 //Modified from https://github.com/nesaku/BiblioReads/blob/main/pages/api/book-scraper.js
-export const getBook = async (id)=>{
+export const getBook = async (id) => {
+    console.log(`[BOOK] Starting fetch for book ID: ${id}`);
     try {
         const html = await fetchWithTimeout(`https://www.goodreads.com/book/show/${id}`);
+        console.log(`[BOOK] Successfully fetched HTML for book ID: ${id}`);
+
         const $ = cheerio.load(html);
+
+        // Basic book info
         const cover = $(".ResponsiveImage").attr("src");
-        const series = $("h3.Text__italic").text();
-        const seriesURL = $("h3.Text__italic > a").attr("href");
         const workURL = $('meta[property="og:url"]').attr("content");
         const title = $('h1[data-testid="bookTitle"]').text();
-        const author = $(".ContributorLinksList > span > a")
+
+        console.log(`[BOOK] Parsed basic info for "${title}" (ID: ${id})`);
+
+        // Author parsing with detailed logging
+        const authorElements = $(".ContributorLinksList > span > a");
+        console.log(`[BOOK] Found ${authorElements.length} author elements`);
+
+        const author = authorElements
             .map((i, el) => {
                 const $el = $(el);
                 const name = $el.find("span").text();
                 const url = $el.attr("href") || '';
                 const id = url ? parseInt((url.substring(url.lastIndexOf('/') + 1)).split('.')[0]) : 0;
+
+                console.log(`[BOOK] Parsed author: ${name}, ID: ${id}, URL: ${url}`);
+
                 return {
                     id: id || 0,
                     name: name || "Unknown Author",
@@ -47,171 +60,71 @@ export const getBook = async (id)=>{
                 };
             })
             .toArray();
+
+        // Other metadata
         const rating = $("div.RatingStatistics__rating").text().slice(0, 4);
-        const ratingCount = $('[data-testid="ratingsCount"]')
-            .text()
-            .split("rating")[0];
-        const reviewsCount = $('[data-testid="reviewsCount"]').text();
+        const ratingCount = $('[data-testid="ratingsCount"]').text().split("rating")[0];
         const desc = $('[data-testid="description"]').text();
-        const genres = $('[data-testid="genresList"] > ul > span > span')
-            .map((i, el) => $(el).find("span").text().replace("Genres", ""))
-            .get();
         const bookEdition = $('[data-testid="pagesFormat"]').text();
         const publishDate = $('[data-testid="publicationInfo"]').text();
-        const related = $("div.DynamicCarousel__itemsArea > div > div")
-            .map((i, el) => {
-                const $el = $(el);
-                const title = $el
-                    .find('div > a > div:nth-child(2) > [data-testid="title"]')
-                    .html();
-                const author = $el
-                    .find('div > a > div:nth-child(2) > [data-testid="author"]')
-                    .html();
-                const src = $el
-                    .find("div > a > div:nth-child(1) > div > div > img")
-                    .attr("src");
-                const url = $el
-                    .find("div > a")
-                    .attr("href")
-                    .replace("https://www.goodreads.com", "");
-                const id = i + 1;
-                return {
-                    id: id,
-                    src: src,
-                    title: title,
-                    author: author,
-                    url: url,
-                };
-            })
-            .toArray();
 
-        const rating5 = $(
-            ".ReviewsSectionStatistics__histogram > div > div:nth-child(1) > div:nth-child(3)"
-        )
-            .text()
-            .split("(")[0]
-            .replace(" ", "");
-        const rating4 = $(
-            ".ReviewsSectionStatistics__histogram > div > div:nth-child(2) > div:nth-child(3)"
-        )
-            .text()
-            .split("(")[0]
-            .replace(" ", "");
-        const rating3 = $(
-            ".ReviewsSectionStatistics__histogram > div > div:nth-child(3) > div:nth-child(3)"
-        )
-            .text()
-            .split("(")[0]
-            .replace(" ", "");
+        console.log(`[BOOK] Parsed metadata - Rating: ${rating}, Count: ${ratingCount}`);
 
-        const rating2 = $(
-            ".ReviewsSectionStatistics__histogram > div > div:nth-child(4) > div:nth-child(3)"
-        )
-            .text()
-            .split("(")[0]
-            .replace(" ", "");
-
-        const rating1 = $(
-            ".ReviewsSectionStatistics__histogram > div > div:nth-child(5) > div:nth-child(3)"
-        )
-            .text()
-            .split("(")[0]
-            .replace(" ", "");
-
-        const reviewBreakdown = {
-            rating5: rating5,
-            rating4: rating4,
-            rating3: rating3,
-            rating2: rating2,
-            rating1: rating1,
+        // Construct the book object
+        const realBook = {
+            Asin: "",
+            AverageRating: parseFloat(rating) || 0,
+            Contributors: author.length ? [{
+                ForeignId: author[0]?.id || 0,
+                Role: "Author"
+            }] : [],
+            Description: desc || "",
+            EditionInformation: bookEdition || "",
+            ForeignId: parseInt(id) || 0,
+            Format: "",
+            ImageUrl: cover || "",
+            IsEbook: true,
+            Isbn13: null,
+            Language: "eng",
+            NumPages: null,
+            Publisher: "",
+            RatingCount: parseInt(ratingCount) || 0,
+            ReleaseDate: null,
+            Title: title || `Unknown Book ${id}`,
+            Url: workURL || `https://www.goodreads.com/book/show/${id}`,
         };
 
-        const reviews = $(".ReviewsList > div:nth-child(2) > div")
-            .filter(Boolean)
-            .map((i, el) => {
-                const $el = $(el);
-                const image = $el
-                    .find("div > article > div > div > section > a > img")
-                    .attr("src");
-                const author = $el
-                    .find(
-                        "div > article > div > div > section:nth-child(2) > span:nth-child(1) > div > a"
-                    )
-                    .text();
-                const date = $el
-                    .find("div > article > section > section:nth-child(1) > span > a")
-                    .text();
-                const stars = $el
-                    .find("div > article > section > section:nth-child(1) > div > span")
-                    .attr("aria-label");
-                const text = $el
-                    .find(
-                        "div > article > section > section:nth-child(2) > section > div > div > span"
-                    )
-                    .html();
-                const likes = $el
-                    .find(
-                        "div > article > section > footer > div > div:nth-child(1) > button > span"
-                    )
-                    .text();
-                const id = i + 1;
+        console.log(`[BOOK] Successfully constructed book object for ID: ${id}`);
+        return { work: realBook, author: author.length ? author : [{ id: 0, name: "Unknown Author", url: "" }] };
 
-                return {
-                    id: id,
-                    image: image,
-                    author: author,
-                    date: date,
-                    stars: stars,
-                    text: text,
-                    likes: likes,
-                };
-            })
-            .toArray();
-
-        const quotes = $(
-            "div.BookDiscussions > div.BookDiscussions__list > a.DiscussionCard:nth-child(1) > div.DiscussionCard__middle > div.DiscussionCard__stats"
-        ).text();
-        const quotesURL = $(
-            "div.BookDiscussions > div.BookDiscussions__list > a.DiscussionCard:nth-child(1)"
-        ).attr("href");
-
-        const questions = $(
-            "div.BookDiscussions > div.BookDiscussions__list > a.DiscussionCard:nth-child(3) > div.DiscussionCard__middle > div.DiscussionCard__stats"
-        ).text();
-        const questionsURL = $(
-            "div.BookDiscussions > div.BookDiscussions__list > a.DiscussionCard:nth-child(3)"
-        ).attr("href");
-        const lastScraped = new Date().toISOString();
-
-    const realBook= {
-        Asin :  "",// unknown
-        AverageRating :  parseInt(rating),
-        Contributors :  author.length ? [{
-            ForeignId: author[0].id || 0,
-            Role: "Author"
-        }] : [],
-        Description :  desc,
-        EditionInformation : bookEdition,
-        ForeignId : parseInt(id),
-        Format :  "",
-        ImageUrl :  cover,
-        IsEbook : true,
-        Isbn13 :  null,
-        Language :  "eng",
-        NumPages :  null,
-        Publisher :  "",
-        RatingCount :  parseInt(ratingCount),
-        ReleaseDate: null,
-        // ReleaseDate : publishDate,
-        Title : title,
-        Url :  workURL,
-    }
-    return {work:realBook, author: author}
     } catch (error) {
-        console.error(`Failed to fetch book ${id}:`, error.message);
-        throw error;
-    }
-}
+        console.error(`[BOOK] Error fetching/parsing book ${id}:`, error);
+        console.error(`[BOOK] Stack trace:`, error.stack);
 
+        // Return fallback object
+        return {
+            work: {
+                Asin: "",
+                AverageRating: 0,
+                Contributors: [],
+                Description: `Failed to fetch book information: ${error.message}`,
+                EditionInformation: "",
+                ForeignId: parseInt(id),
+                Format: "",
+                ImageUrl: "",
+                IsEbook: true,
+                Isbn13: null,
+                Language: "eng",
+                NumPages: null,
+                Publisher: "",
+                RatingCount: 0,
+                ReleaseDate: null,
+                Title: `Failed to Load Book ${id}`,
+                Url: `https://www.goodreads.com/book/show/${id}`,
+            },
+            author: [{ id: 0, name: "Unknown Author", url: "" }]
+        };
+    }
+};
 
 export default getBook;

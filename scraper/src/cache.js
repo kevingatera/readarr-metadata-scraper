@@ -11,11 +11,18 @@ export async function getFromCache(key) {
     const { timestamp, value } = JSON.parse(data);
 
     if (Date.now() - timestamp > CACHE_TTL) {
+      console.log(`Cache expired for key: ${key}`);
       await fs.unlink(filePath);
       return null;
     }
+
+    const age = Math.round((Date.now() - timestamp) / 1000 / 60);
+    console.log(`Cache hit for ${key} (age: ${age}min)`);
     return value;
-  } catch {
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`Cache read error for ${key}:`, error.message);
+    }
     return null;
   }
 }
@@ -27,7 +34,8 @@ export async function saveToCache(key, value) {
       timestamp: Date.now(),
       value
     }));
+    console.log(`Cached ${key}`);
   } catch (error) {
-    console.error('Cache write failed:', error);
+    console.error(`Cache write failed for ${key}:`, error.message);
   }
 } 
