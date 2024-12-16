@@ -30,31 +30,37 @@ const app = express()
 app.use(express.json())
 
 app.get('/v1/author/:id', async (req, res) => {
-    const id = req.params.id
-    console.log('requesting author id /v1/author', id)
-    const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`
-    const authorInfo = await getAuthor(id, goodreadsUrl)
-    console.log(authorInfo)
-    res.status(200);
-    res.send({ ...authorInfo, Works: [] })
+    try {
+        const id = req.params.id;
+        console.log('requesting author id /v1/author', id);
+        const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`;
+        const authorInfo = await getAuthor(id, goodreadsUrl);
+        res.send({ ...authorInfo, Works: [] });
+    } catch (error) {
+        console.error(`Failed to fetch author ${req.params.id}:`, error);
+        res.status(404).send({ error: 'Author not found' });
+    }
 });
 app.get('/v1/work/:id', async (req, res) => {
-    const id = req.params.id
-    console.log('getting work /v1/work', id)
-    const { work, author } = await getBook(id)
-    const authorInfo = await getAuthor(author[0].id, author[0].url)
-    const response = {
-        ForeignId: work.ForeignId,
-        Title: work.Title,
-        Url: work.Url,
-        Genres: ["horror"],
-        RelatedWorks: [],
-        Books: [work],
-        Series: [],
-        Authors: [authorInfo]
+    try {
+        const id = req.params.id;
+        console.log('getting work /v1/work', id);
+        const { work, author } = await getBook(id);
+        const authorInfo = await getAuthor(author[0].id, author[0].url);
+        res.send({
+            ForeignId: work.ForeignId,
+            Title: work.Title,
+            Url: work.Url,
+            Genres: ["horror"],
+            RelatedWorks: [],
+            Books: [work],
+            Series: [],
+            Authors: [authorInfo]
+        });
+    } catch (error) {
+        console.error(`Failed to fetch work ${req.params.id}:`, error);
+        res.status(404).send({ error: 'Work not found' });
     }
-    console.log(response)
-    res.send(response)
 });
 
 let lastRequestTime = 0;
@@ -101,37 +107,7 @@ async function fetchWithRetry(fetchFn, ...args) {
 }
 
 function createFallbackResponse(fetchFn, args) {
-    const id = args[0];
-    if (fetchFn.name === 'getBook') {
-        return {
-            work: {
-                ForeignId: parseInt(id),
-                Title: `Unavailable Book ${id}`,
-                Url: `https://www.goodreads.com/book/show/${id}`,
-                Description: "This book is temporarily unavailable",
-                AverageRating: 0,
-                RatingCount: 0
-            },
-            author: [{
-                id: 0,
-                name: "Unknown Author",
-                url: ""
-            }]
-        };
-    }
-    if (fetchFn.name === 'getAuthor') {
-        return {
-            ForeignId: parseInt(id),
-            Name: "Unknown Author",
-            Description: "Author information temporarily unavailable",
-            AverageRating: 0,
-            RatingCount: 0,
-            Url: `https://www.goodreads.com/author/show/${id}`,
-            ImageUrl: "",
-            Series: null,
-            Works: null
-        };
-    }
+    throw new Error(`Failed to fetch ${fetchFn.name} with id ${args[0]}`);
 }
 
 async function batchFetchWithRetry(fetchFn, ids) {

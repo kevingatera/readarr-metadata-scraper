@@ -76,31 +76,7 @@ export const getBook = async (id) => {
 
   } catch (error) {
     console.error(`[BOOK] Error fetching/parsing book ${id}:`, error);
-    console.error(`[BOOK] Stack trace:`, error.stack);
-
-    // Return fallback object
-    return {
-      work: {
-        Asin: "",
-        AverageRating: 0,
-        Contributors: [],
-        Description: `Failed to fetch book information: ${error.message}`,
-        EditionInformation: "",
-        ForeignId: parseInt(id),
-        Format: "",
-        ImageUrl: "",
-        IsEbook: true,
-        Isbn13: null,
-        Language: "eng",
-        NumPages: null,
-        Publisher: "",
-        RatingCount: 0,
-        ReleaseDate: null,
-        Title: `Failed to Load Book ${id}`,
-        Url: `https://www.goodreads.com/book/show/${id}`,
-      },
-      author: [{ id: 0, name: "Unknown Author", url: "" }]
-    };
+    throw new Error(`Failed to fetch book ${id}: ${error.message}`);
   }
 };
 

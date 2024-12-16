@@ -59,24 +59,8 @@ const getAuthor = async (authorId, authorUrl) => {
     return authorData;
 
   } catch (error) {
-    console.error(`[AUTHOR] Comprehensive error for author ${authorId}:`, {
-      message: error.message,
-      stack: error.stack,
-      url: authorUrl
-    });
-
-    // Return a fallback object
-    return {
-      AverageRating: 0,
-      Description: `Failed to fetch author information: ${error.message}`,
-      ForeignId: parseInt(authorId),
-      ImageUrl: '',
-      Name: 'Failed to Load Author',
-      RatingCount: 0,
-      Series: null,
-      Url: authorUrl,
-      Works: null
-    };
+    console.error(`[AUTHOR] Error for author ${authorId}:`, error);
+    throw new Error(`Failed to fetch author ${authorId}: ${error.message}`);
   }
 };
 
