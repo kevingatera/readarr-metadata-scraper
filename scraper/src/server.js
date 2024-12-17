@@ -11,8 +11,9 @@ const CACHE_DIR = process.env.CACHE_DIR || './cache';
 await mkdir(CACHE_DIR, { recursive: true });
 
 import crypto from 'crypto';
-import logger from './logger.js';
+import { createLogger } from './logger.js';
 
+const logger = createLogger('SERVER');
 function generateCacheKey(fetchFn, args) {
   return `${fetchFn.name}_${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
 }

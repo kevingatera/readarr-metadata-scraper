@@ -1,28 +1,19 @@
-import winston from 'winston';
+import pino from 'pino';
 
-const { combine, timestamp, printf, colorize } = winston.format;
-
-const logFormat = printf(({ level, message, timestamp, module }) => {
-  return `${timestamp} [${level.toUpperCase()}] [${module || 'SERVER'}]: ${message}`;
+const transport = pino.transport({
+  target: 'pino-pretty',
+  options: {
+    colorize: true,
+    translateTime: 'yyyy-mm-dd HH:MM:ss.l',
+    messageFormat: '[{module}] {msg}',
+    ignore: 'module'
+  }
 });
 
-const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  format: combine(
-    timestamp(),
-    colorize(),
-    logFormat
-  ),
-  transports: [
-    new winston.transports.Console()
-  ]
-});
+const baseLogger = pino(transport);
 
-export const createLogger = (module) => ({
-  debug: (message) => logger.debug(message, { module }),
-  info: (message) => logger.info(message, { module }),
-  warn: (message) => logger.warn(message, { module }),
-  error: (message) => logger.error(message, { module })
-});
+export const createLogger = (module) => {
+  return baseLogger.child({ module });
+};
 
-export default logger; 
+export default baseLogger; 
