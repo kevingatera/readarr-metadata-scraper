@@ -1,3 +1,6 @@
+import { createLogger } from '../logger.js';
+const logger = createLogger('FETCH');
+
 const FETCH_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
@@ -22,7 +25,11 @@ export async function fetchWithTimeout(url) {
 
       return await response.text();
     } catch (error) {
-      if (attempt === MAX_RETRIES) throw error;
+      if (attempt === MAX_RETRIES) {
+        logger.error(`Failed to fetch ${url}: ${error}`);
+        throw error;
+      }
+      logger.warn(`Attempt ${attempt} failed for ${url}. Retrying in ${RETRY_DELAY}ms`);
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
     } finally {
       clearTimeout(timeoutId);

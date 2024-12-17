@@ -1,12 +1,14 @@
 import * as cheerio from 'cheerio';
 import { fetchWithTimeout } from './utils/fetch.js';
+import { createLogger } from './logger.js';
+const logger = createLogger('BOOK');
 
 //Modified from https://github.com/nesaku/BiblioReads/blob/main/pages/api/book-scraper.js
 export const getBook = async (id) => {
-  console.log(`[BOOK] Starting fetch for book ID: ${id}`);
+  logger.debug(`Starting fetch for book ID: ${id}`);
   try {
     const html = await fetchWithTimeout(`https://www.goodreads.com/book/show/${id}`);
-    console.log(`[BOOK] Successfully fetched HTML for book ID: ${id}`);
+    logger.debug(`Fetched HTML for book ID: ${id}`);
 
     const $ = cheerio.load(html);
 
@@ -15,11 +17,11 @@ export const getBook = async (id) => {
     const workURL = $('meta[property="og:url"]').attr("content");
     const title = $('h1[data-testid="bookTitle"]').text();
 
-    console.log(`[BOOK] Parsed basic info for "${title}" (ID: ${id})`);
+    logger.debug(`Parsed basic info for "${title}" (ID: ${id})`);
 
     // Author parsing with detailed logging
     const authorElements = $(".ContributorLinksList > span > a");
-    console.log(`[BOOK] Found ${authorElements.length} author elements`);
+    logger.debug(`Found ${authorElements.length} author elements`);
 
     const author = authorElements
       .map((i, el) => {
@@ -28,7 +30,7 @@ export const getBook = async (id) => {
         const url = $el.attr("href") || '';
         const id = url ? parseInt((url.substring(url.lastIndexOf('/') + 1)).split('.')[0]) : 0;
 
-        console.log(`[BOOK] Parsed author: ${name}, ID: ${id}, URL: ${url}`);
+        logger.debug(`Parsed author: ${name}, ID: ${id}, URL: ${url}`);
 
         return {
           id: id || 0,
@@ -45,7 +47,7 @@ export const getBook = async (id) => {
     const bookEdition = $('[data-testid="pagesFormat"]').text();
     const publishDate = $('[data-testid="publicationInfo"]').text();
 
-    console.log(`[BOOK] Parsed metadata - Rating: ${rating}, Count: ${ratingCount}`);
+    logger.debug(`Parsed metadata - Rating: ${rating}, Count: ${ratingCount}`);
 
     // Construct the book object
     const realBook = {
@@ -71,11 +73,11 @@ export const getBook = async (id) => {
       Url: workURL || `https://www.goodreads.com/book/show/${id}`,
     };
 
-    console.log(`[BOOK] Successfully constructed book object for ID: ${id}`);
+    logger.debug(`Constructed book object for ID: ${id}`);
     return { work: realBook, author: author.length ? author : [{ id: 0, name: "Unknown Author", url: "" }] };
 
   } catch (error) {
-    console.error(`[BOOK] Error fetching/parsing book ${id}:`, error);
+    logger.error(`Error fetching/parsing book ${id}: ${error}`);
     throw new Error(`Failed to fetch book ${id}: ${error.message}`);
   }
 };

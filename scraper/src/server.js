@@ -11,6 +11,7 @@ const CACHE_DIR = process.env.CACHE_DIR || './cache';
 await mkdir(CACHE_DIR, { recursive: true });
 
 import crypto from 'crypto';
+import logger from './logger.js';
 
 function generateCacheKey(fetchFn, args) {
     return `${fetchFn.name}_${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
@@ -32,19 +33,19 @@ app.use(express.json())
 app.get('/v1/author/:id', async (req, res) => {
     try {
         const id = req.params.id;
-        console.log('requesting author id /v1/author', id);
+        logger.info(`Requesting author ID: ${id}`);
         const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`;
         const authorInfo = await getAuthor(id, goodreadsUrl);
         res.send({ ...authorInfo, Works: [] });
     } catch (error) {
-        console.error(`Failed to fetch author ${req.params.id}:`, error);
+        logger.error(`Failed to fetch author ${req.params.id}: ${error}`);
         res.status(404).send({ error: 'Author not found' });
     }
 });
 app.get('/v1/work/:id', async (req, res) => {
     try {
         const id = req.params.id;
-        console.log('getting work /v1/work', id);
+        logger.info(`Getting work ID: ${id}`);
         const { work, author } = await getBook(id);
         const authorInfo = await getAuthor(author[0].id, author[0].url);
         res.send({
@@ -58,7 +59,7 @@ app.get('/v1/work/:id', async (req, res) => {
             Authors: [authorInfo]
         });
     } catch (error) {
-        console.error(`Failed to fetch work ${req.params.id}:`, error);
+        logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
         res.status(404).send({ error: 'Work not found' });
     }
 });
@@ -72,16 +73,17 @@ async function rateLimit() {
         await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY - timeSinceLastRequest));
     }
     lastRequestTime = Date.now();
+    logger.debug(`Rate limiting: waiting ${RATE_LIMIT_DELAY - timeSinceLastRequest}ms`);
 }
 
 async function fetchWithRetry(fetchFn, ...args) {
     const cacheKey = generateCacheKey(fetchFn, args);
     const cached = await getFromCache(cacheKey);
     if (cached) {
-        console.log(`Cache hit for ${fetchFn.name} with args: ${args}`);
+        logger.debug(`Cache hit for ${fetchFn.name} with args: ${args}`);
         return cached;
     }
-    console.log(`Cache miss for ${fetchFn.name} with args: ${args}`);
+    logger.debug(`Cache miss for ${fetchFn.name} with args: ${args}`);
 
     let lastError;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -93,12 +95,12 @@ async function fetchWithRetry(fetchFn, ...args) {
         } catch (error) {
             lastError = error;
             if (attempt === MAX_RETRIES) {
-                console.error(`All ${MAX_RETRIES} attempts failed for ${fetchFn.name}:`, error);
+                logger.error(`All ${MAX_RETRIES} attempts failed for ${fetchFn.name}:`, error);
                 break;
             }
 
             const delay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), MAX_DELAY);
-            console.log(`Attempt ${attempt} failed for ${fetchFn.name}. Retrying in ${delay / 1000}s`);
+            logger.warn(`Attempt ${attempt} failed for ${fetchFn.name}. Retrying in ${delay / 1000}s`);
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -119,7 +121,7 @@ async function batchFetchWithRetry(fetchFn, ids) {
             const result = await fetchWithRetry(fetchFn, id);
             results[id] = result;
         } catch (error) {
-            console.error(`Failed to fetch ${id}:`, error);
+            logger.error(`Failed to fetch ${id}:`, error);
             results[id] = createFallbackResponse(fetchFn, [id]);
         }
     }
@@ -129,7 +131,7 @@ async function batchFetchWithRetry(fetchFn, ids) {
 
 app.post('*', async (req, res) => {
     try {
-        console.log('post body', req.body);
+        logger.info('Processing POST request', req.body);
 
         const bookResults = await batchFetchWithRetry(getBook, req.body);
 
@@ -161,7 +163,7 @@ app.post('*', async (req, res) => {
 
         res.send(response);
     } catch (error) {
-        console.error('Error processing request:', error);
+        logger.error(`Error processing request: ${error}`);
         res.status(500).send({
             Works: [],
             Series: [],
@@ -174,7 +176,7 @@ const httpServer = http.createServer(app);
 const httpsServer = https.createServer(credentials, app);
 
 httpServer.listen(80, async () => {
-    console.log('listening...')
+    logger.info('HTTP server listening on port 80');
 }
 );
 try {
