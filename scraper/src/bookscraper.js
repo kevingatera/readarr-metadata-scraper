@@ -6,118 +6,124 @@ const logger = createLogger('BOOK');
 const extractGenres = ($) => {
   const genreElements = $('.BookPageMetadataSection__genreButton a.Button--tag');
   const genres = genreElements.map((_, element) => $(element).text().trim()).get();
-  
+
   logger.debug(`Extracted genres: ${genres.join(', ')}`);
   return genres;
 };
 
-//Modified from https://github.com/nesaku/BiblioReads/blob/main/pages/api/book-scraper.js
+const parseBookPage = ($, id) => {
+  const cover = $(".ResponsiveImage").attr("src") || "";
+  const workURL = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
+  const title = $('h1[data-testid="bookTitle"]').text().trim() || `Unknown Book ${id}`;
+  const imageUrl = $(".ResponsiveImage").attr("src") || "";
+  const bookUrl = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
+  const description = $('[data-testid="description"]').text().trim() || '';
+
+  let isbn13 = null;
+  let asin = null;
+  const detailsRows = $('div[data-testid="bookDetails"] > div');
+
+  detailsRows.each((i, el) => {
+    const label = $(el).find('span').first().text().trim();
+    const value = $(el).find('span').last().text().trim();
+
+    if (label.includes('ISBN13')) {
+      const isbnMatch = value.match(/(\d{13})/);
+      if (isbnMatch) {
+        isbn13 = isbnMatch[1];
+      }
+    }
+
+    if (label.includes('ASIN')) {
+      asin = value;
+    }
+  });
+
+  const format = $('div[data-testid="bookFormat"]').text().trim();
+  const numPagesText = $('p[data-testid="pagesFormat"]').text().trim();
+  const numPagesMatch = numPagesText.match(/(\d+) pages/);
+  const numPages = numPagesMatch ? parseInt(numPagesMatch[1]) : null;
+
+  const publisherText = $('p[data-testid="publicationInfo"]').text().trim();
+  const publisherMatch = publisherText.match(/Published\s+.*\s+by\s+(.*)/);
+  const publisher = publisherMatch ? publisherMatch[1] : '';
+
+  const releaseDateMatch = publisherText.match(/Published\s+(.*)\s+by/);
+  const releaseDate = releaseDateMatch ? releaseDateMatch[1] : null;
+
+  const language = 'eng';
+
+  const rating = parseFloat($("div.RatingStatistics__rating").text()) || 0;
+  const ratingCountText = $('[data-testid="ratingsCount"]').text();
+  const ratingCountMatch = ratingCountText.match(/([\d,]+)\s+ratings/);
+  const ratingCount = ratingCountMatch ? parseInt(ratingCountMatch[1].replace(/,/g, ''), 10) : 0;
+
+  const authorElements = $(".ContributorLinksList > span > a");
+
+  const authors = authorElements
+    .map((i, el) => {
+      const $el = $(el);
+      const name = $el.find("span").text().trim() || "Unknown Author";
+      const url = $el.attr("href") || '';
+      const foreignId = url ? parseInt(url.split('/').pop()) : 0;
+
+      logger.debug(`Parsed author: ${name}, ForeignId: ${foreignId}, URL: ${url}`);
+
+      return {
+        ForeignId: foreignId || 0,
+        Name: name,
+        Url: url || "",
+        Series: null,
+        Works: null
+      };
+    })
+    .toArray();
+
+  const contributors = authors.map(author => ({
+    ForeignId: author.ForeignId,
+    Role: "Author"
+  }));
+
+  return {
+    Asin: asin,
+    AverageRating: rating,
+    Contributors: contributors,
+    Description: description,
+    EditionInformation: format,
+    ForeignId: parseInt(id) || 0,
+    Format: format,
+    ImageUrl: imageUrl,
+    IsEbook: format.toLowerCase().includes('kindle') || format.toLowerCase().includes('ebook'),
+    Isbn13: isbn13,
+    Language: language,
+    NumPages: numPages,
+    Publisher: publisher,
+    RatingCount: ratingCount,
+    ReleaseDate: releaseDate,
+    Title: title,
+    Url: bookUrl,
+    Genres: extractGenres($),
+  };
+};
+
 export const getBook = async (id) => {
   logger.debug(`Starting fetch for book ID: ${id}`);
   try {
     const html = await fetchWithTimeout(`https://www.goodreads.com/book/show/${id}`);
     logger.debug(`Fetched HTML for book ID: ${id}`);
 
-    const $ = cheerio.load(html);
-
-    const cover = $(".ResponsiveImage").attr("src") || "";
-    const workURL = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
-    const title = $('h1[data-testid="bookTitle"]').text().trim() || `Unknown Book ${id}`;
-    const imageUrl = $(".ResponsiveImage").attr("src") || "";
-    const bookUrl = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
-    const description = $('[data-testid="description"]').text().trim() || '';
-
-    let isbn13 = null;
-    let asin = null;
-    const detailsRows = $('div[data-testid="bookDetails"] > div');
-
-    detailsRows.each((i, el) => {
-      const label = $(el).find('span').first().text().trim();
-      const value = $(el).find('span').last().text().trim();
-
-      if (label.includes('ISBN13')) {
-        const isbnMatch = value.match(/(\d{13})/);
-        if (isbnMatch) {
-          isbn13 = isbnMatch[1];
-        }
-      }
-
-      if (label.includes('ASIN')) {
-        asin = value;
-      }
-    });
-
-    const format = $('div[data-testid="bookFormat"]').text().trim();
-    const numPagesText = $('p[data-testid="pagesFormat"]').text().trim();
-    const numPagesMatch = numPagesText.match(/(\d+) pages/);
-    const numPages = numPagesMatch ? parseInt(numPagesMatch[1]) : null;
-
-    const publisherText = $('p[data-testid="publicationInfo"]').text().trim();
-    const publisherMatch = publisherText.match(/Published\s+.*\s+by\s+(.*)/);
-    const publisher = publisherMatch ? publisherMatch[1] : '';
-
-    const releaseDateMatch = publisherText.match(/Published\s+(.*)\s+by/);
-    const releaseDate = releaseDateMatch ? releaseDateMatch[1] : null;
-
-    const language = 'eng';
-
-    const rating = parseFloat($("div.RatingStatistics__rating").text()) || 0;
-    const ratingCountText = $('[data-testid="ratingsCount"]').text();
-    const ratingCountMatch = ratingCountText.match(/([\d,]+)\s+ratings/);
-    const ratingCount = ratingCountMatch ? parseInt(ratingCountMatch[1].replace(/,/g, ''), 10) : 0;
-
-    const authorElements = $(".ContributorLinksList > span > a");
-
-    const authors = authorElements
-      .map((i, el) => {
-        const $el = $(el);
-        const name = $el.find("span").text().trim() || "Unknown Author";
-        const url = $el.attr("href") || '';
-        const foreignId = url ? parseInt(url.split('/').pop()) : 0;
-
-        logger.debug(`Parsed author: ${name}, ForeignId: ${foreignId}, URL: ${url}`);
-
-        return {
-          ForeignId: foreignId || 0,
-          Name: name,
-          Url: url || "",
-          Series: null,
-          Works: null
-        };
-      })
-      .toArray();
-
-    const contributors = authors.map(author => ({
-      ForeignId: author.ForeignId,
-      Role: "Author"
-    }));
-
-    const bookResource = {
-      Asin: asin,
-      AverageRating: rating,
-      Contributors: contributors,
-      Description: description,
-      EditionInformation: format,
-      ForeignId: parseInt(id) || 0,
-      Format: format,
-      ImageUrl: imageUrl,
-      IsEbook: format.toLowerCase().includes('kindle') || format.toLowerCase().includes('ebook'),
-      Isbn13: isbn13,
-      Language: language,
-      NumPages: numPages,
-      Publisher: publisher,
-      RatingCount: ratingCount,
-      ReleaseDate: releaseDate,
-      Title: title,
-      Url: bookUrl,
-      Genres: extractGenres($),
-    };
-
-    logger.debug(`Constructed bookResource for ID: ${id}`);
-    return bookResource;
-  } catch (error) {
-    logger.error(`Error fetching/parsing book ${id}: ${error}`);
-    throw new Error(`Failed to fetch book ${id}: ${error.message}`);
+    try {
+      const $ = cheerio.load(html);
+      const bookResource = parseBookPage($, id);
+      logger.debug(`Constructed bookResource for ID: ${id}`);
+      return bookResource;
+    } catch (parseError) {
+      logger.error(`Error parsing book ${id}: ${parseError}`);
+      return null;
+    }
+  } catch (fetchError) {
+    logger.error(`Error fetching book ${id}: ${fetchError}`);
+    throw fetchError;
   }
 };
 
@@ -127,15 +133,15 @@ const parsePublicationDate = (dateStr) => {
     .replace(/Published\s+/, '')  // Remove 'Published' prefix
     .replace(/(st|nd|rd|th),?/g, '')  // Remove ordinal indicators
     .trim();
-  
+
   try {
     const date = new Date(cleanDate);
-    
+
     // Check if date is valid
     if (isNaN(date.getTime())) {
       return null;
     }
-    
+
     return date.toISOString();
   } catch (error) {
     return null;
