@@ -36,6 +36,7 @@ app.get('/v1/author/:id', async (req, res) => {
   try {
     const id = req.params.id;
     logger.info(`Requesting author ID: ${id}`);
+    logger.info(`Endpoint called: /v1/author/${id}`);
     const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`;
     const authorInfo = await getAuthor(id, goodreadsUrl);
     res.send({ ...authorInfo, Works: [] });
@@ -48,6 +49,7 @@ app.get('/v1/work/:id', async (req, res) => {
   try {
     const id = req.params.id;
     logger.info(`Getting work ID: ${id}`);
+    logger.info(`Endpoint called: /v1/work/${id}`);
     const { work, author } = await getBook(id);
     const authorInfo = await getAuthor(author[0].id, author[0].url);
     res.send({
@@ -133,15 +135,29 @@ async function batchFetchWithRetry(fetchFn, ids) {
 
 app.post('*', async (req, res) => {
   try {
-    logger.info('Processing POST request', req.body);
+    logger.info({
+      msg: 'Processing POST request',
+      body: req.body,
+      bodyCount: req.body?.length || 'N/A',
+      requestSize: JSON.stringify(req.body).length
+    });
 
     const bookResults = await batchFetchWithRetry(getBook, req.body);
+    logger.info({
+      msg: 'Book fetch results',
+      bookCount: Object.keys(bookResults).length
+    });
 
     const authorIds = [...new Set(
       Object.values(bookResults)
         .filter(book => book?.author?.[0])
         .map(book => book.author[0].id)
     )];
+    logger.info({
+      msg: 'Extracted author IDs',
+      authorIdCount: authorIds.length,
+      authorIds
+    });
 
     const authorResults = await batchFetchWithRetry(
       (authorId) => getAuthor(
@@ -150,6 +166,10 @@ app.post('*', async (req, res) => {
       ),
       authorIds
     );
+    logger.info({
+      msg: 'Author fetch results',
+      authorCount: Object.keys(authorResults).length
+    });
 
     const works = Object.values(bookResults)
       .filter(book => book?.work)
@@ -169,9 +189,19 @@ app.post('*', async (req, res) => {
       Authors: Object.values(authorResults)
     };
 
+    logger.info({
+      msg: 'Final response summary',
+      workCount: works.length,
+      authorCount: response.Authors.length
+    });
+
     res.send(response);
   } catch (error) {
-    logger.error(`Error processing request: ${error}`);
+    logger.error({
+      msg: 'Error processing request',
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).send({
       Works: [],
       Series: [],
