@@ -136,14 +136,44 @@ export const getEditions = async (workId) => {
       const bookIdMatch = bookLink.match(/\/book\/show\/(\d+)/);
       const bookId = bookIdMatch ? bookIdMatch[1] : null;
 
-      const publicationDate = $(element).find('div.dataRow').eq(1).text().trim() || '';
-      const format = $(element).find('div.dataRow').eq(2).text().trim() || '';
+      const publicationInfo = $(element).find('div.dataRow').eq(1).text().trim() || '';
+      const publicationDateMatch = publicationInfo.match(/Published\s+(.+?)(?:\s+by|$)/);
+      const publicationDate = publicationDateMatch ? publicationDateMatch[1].trim() : null;
+
+      const publisherMatch = publicationInfo.match(/by\s+(.*)/);
+      const publisher = publisherMatch ? publisherMatch[1].trim() : '';
+
+      const formatAndPagesText = $(element).find('div.dataRow').eq(2).text().trim() || '';
+      const numPagesMatch = formatAndPagesText.match(/(\d+)\s*pages/);
+      const numPages = numPagesMatch ? parseInt(numPagesMatch[1]) : null;
+      const format = formatAndPagesText.split(',')[0].trim();
 
       const authors = [];
-      $(element).find('div.moreDetails .authorName').each((i, authorElem) => {
-        const authorName = $(authorElem).text().trim() || "Unknown Author";
-        authors.push(authorName);
+      $(element).find('div.authorName__container').each((i, authorContainer) => {
+        const authorLink = $(authorContainer).find('a.authorName');
+        const authorName = authorLink.find('span[itemprop="name"]').text().trim() || "Unknown Author";
+        const authorUrl = authorLink.attr('href') || '';
+        const authorIdMatch = authorUrl.match(/\/author\/show\/(\d+)/);
+        const authorId = authorIdMatch ? parseInt(authorIdMatch[1]) : 0;
+
+        const roleElement = $(authorContainer).find('.greyText.role, .greyText');
+        const roleText = roleElement.text().replace(/[()]/g, '').trim();
+        const role = roleText.includes('Author') ? 'Author' : (roleText || 'Author');
+
+        authors.push({
+          name: authorName,
+          foreignId: authorId,
+          url: authorUrl,
+          role: role
+        });
       });
+
+      const contributors = authors.map(author => ({
+        ForeignId: author.foreignId,
+        Role: author.role,
+        Name: author.name,
+        Url: author.url
+      }));
 
       const isbn = $(element)
         .find('.dataRow')
@@ -185,11 +215,7 @@ export const getEditions = async (workId) => {
 
       const ratingCount = ratingCountMatch ? parseInt(ratingCountMatch[1].replace(/,/g, ''), 10) : 0;
 
-      const contributors = authors.map(authorName => ({
-        ForeignId: 0,
-        Role: "Author",
-        Name: authorName
-      }));
+      const imageUrl = $(element).find('div.leftAlignedImage img').attr('src') || '';
 
       editions.push({
         Asin: asin,
@@ -199,12 +225,12 @@ export const getEditions = async (workId) => {
         EditionInformation: format,
         ForeignId: parseInt(bookId) || 0,
         Format: format,
-        ImageUrl: '',
+        ImageUrl: imageUrl,
         IsEbook: format.toLowerCase().includes('ebook') || format.toLowerCase().includes('kindle'),
         Isbn13: isbn || null,
         Language: editionLanguage,
-        NumPages: null,
-        Publisher: '',
+        NumPages: numPages,
+        Publisher: publisher,
         RatingCount: ratingCount,
         ReleaseDate: publicationDate || null,
         Title: title,
