@@ -141,7 +141,13 @@ app.post('*', async (req, res) => {
                 .map(book => book.author[0].id)
         )];
 
-        const authorResults = await batchFetchWithRetry(getAuthor, authorIds);
+        const authorResults = await batchFetchWithRetry(
+            (authorId) => getAuthor(
+                authorId,
+                `https://www.goodreads.com/author/show/${authorId}`
+            ),
+            authorIds
+        );
 
         const works = Object.values(bookResults)
             .filter(book => book?.work)
