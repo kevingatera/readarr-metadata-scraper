@@ -1,7 +1,7 @@
 import express from 'express'
 import http from "http";
 import https from "https";
-import { getBook } from './bookscraper.js'
+import { getBook, getEditions } from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
 import { getFromCache, saveToCache } from './cache.js';
 
@@ -47,20 +47,40 @@ app.get('/v1/author/:id', async (req, res) => {
 });
 app.get('/v1/work/:id', async (req, res) => {
   try {
-    const id = req.params.id;
-    logger.info(`Getting work ID: ${id}`);
-    logger.info(`Endpoint called: /v1/work/${id}`);
-    const { work, author } = await getBook(id);
-    const authorInfo = await getAuthor(author[0].id, author[0].url);
+    const workId = req.params.id;
+    logger.info(`Getting work ID: ${workId}`);
+    logger.info(`Endpoint called: /v1/work/${workId}`);
+    const editions = await fetchWithRetry(getEditions, workId);
+
+    if (editions.length === 0) {
+      throw new Error('No editions found');
+    }
+
+    const primaryEdition = editions[0];
+
+    const authorIds = editions.flatMap(edition => {
+      return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);
+    });
+
+    const uniqueAuthorIds = [...new Set(authorIds)];
+
+    const authorResults = await batchFetchWithRetry(
+      (authorId) => getAuthor(
+        authorId,
+        `https://www.goodreads.com/author/show/${authorId}`
+      ),
+      uniqueAuthorIds
+    );
+
     res.send({
-      ForeignId: work.ForeignId,
-      Title: work.Title,
-      Url: work.Url,
+      ForeignId: parseInt(workId),
+      Title: primaryEdition.Title,
+      Url: `https://www.goodreads.com/work/editions/${workId}`,
       Genres: ["horror"],
       RelatedWorks: [],
-      Books: [work],
+      Books: editions,
       Series: [],
-      Authors: [authorInfo]
+      Authors: Object.values(authorResults)
     });
   } catch (error) {
     logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
@@ -150,8 +170,8 @@ app.post('*', async (req, res) => {
 
     const authorIds = [...new Set(
       Object.values(bookResults)
-        .filter(book => book?.author?.[0])
-        .map(book => book.author[0].id)
+        .flatMap(book => book.Contributors.map(contributor => contributor.ForeignId))
+        .filter(id => id)
     )];
     logger.info({
       msg: 'Extracted author IDs',
@@ -172,15 +192,15 @@ app.post('*', async (req, res) => {
     });
 
     const works = Object.values(bookResults)
-      .filter(book => book?.work)
-      .map(({ work }) => ({
-        ForeignId: work.ForeignId,
-        Title: work.Title,
-        Url: work.Url,
+      .map(book => ({
+        ForeignId: book.ForeignId,
+        Title: book.Title,
+        Url: book.Url,
         Genres: ["horror"],
         RelatedWorks: [],
-        Books: [work],
-        Series: []
+        Books: [book],
+        Series: [],
+        Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId])
       }));
 
     const response = {

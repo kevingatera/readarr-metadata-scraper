@@ -10,34 +10,34 @@ const getAuthor = async (authorId, authorUrl) => {
     const htmlString = await fetchWithTimeout(authorUrl);
     const $ = cheerio.load(htmlString);
 
-    const image = $("div[itemtype='http://schema.org/Person'] > div > a > img").attr("src");
-    logger.debug(`Parsed image: ${image || 'No image found'}`);
+    const image = $("div[itemtype='http://schema.org/Person'] > div > a > img").attr("src") || '';
+    logger.debug(`Parsed image: ${image ? image : 'No image found'}`);
 
-    const name = $("h1.authorName > span").text().trim();
+    const name = $("h1.authorName > span").text().trim() || 'Unknown Author';
     logger.debug(`Parsed name: ${name}`);
 
-    const website = $("div.dataItem > a[itemprop='url']").text().trim();
-    logger.debug(`Parsed website: ${website || 'No website found'}`);
+    const genres = $('div.dataItem').filter((i, el) => {
+      return $(el).text().includes('Genre');
+    }).find('a[href*="/genres/"]').map((i, el) => $(el).text().trim()).get();
 
-    const genre = $("div.dataItem > a[href*='/genres/']")
-      .map((i, el) => $(el).text())
-      .get();
-    logger.debug(`Parsed genres: ${genre.length} found`);
+    logger.debug(`Parsed genres: ${genres.length} found`);
 
-    const desc = $(".aboutAuthorInfo > span").html() || '';
+    const desc = $(".aboutAuthorInfo span").first().html() || '';
     logger.debug(`Parsed description: ${desc ? 'Description found' : 'No description'}`);
 
-    const birthDate = $("div.rightContainer > div[itemprop='birthDate']").text().trim();
-    const deathDate = $("div.rightContainer > div[itemprop='deathDate']").text().trim();
-    logger.debug(`Birth/Death dates - Birth: ${birthDate}, Death: ${deathDate}`);
+    const averageRatingText = $('span.average').text() || '0';
+    const averageRating = parseFloat(averageRatingText) || 0;
+
+    const ratingCountText = $('span.votes').text().replace(/,/g, '') || '0';
+    const ratingCount = parseInt(ratingCountText, 10) || 0;
 
     const authorData = {
-      AverageRating: 3.0,
+      AverageRating: averageRating,
       Description: desc,
-      ForeignId: parseInt(authorId),
-      ImageUrl: image || '',
-      Name: name || 'Unknown Author',
-      RatingCount: 120,
+      ForeignId: parseInt(authorId) || 0,
+      ImageUrl: image,
+      Name: name,
+      RatingCount: ratingCount,
       Series: null,
       Url: authorUrl,
       Works: null
@@ -45,7 +45,6 @@ const getAuthor = async (authorId, authorUrl) => {
 
     logger.debug(`Constructed author object for ID: ${authorId}`);
     return authorData;
-
   } catch (error) {
     logger.error(`Error for author ${authorId}: ${error}`);
     throw new Error(`Failed to fetch author ${authorId}: ${error.message}`);
