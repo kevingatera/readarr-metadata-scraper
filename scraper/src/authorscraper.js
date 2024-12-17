@@ -16,9 +16,9 @@ const getAuthor = async (authorId, authorUrl) => {
     const name = $("h1.authorName > span").text().trim() || 'Unknown Author';
     logger.debug(`Parsed name: ${name}`);
 
-    const genres = $('div.dataItem').filter((i, el) => {
-      return $(el).text().includes('Genre');
-    }).find('a[href*="/genres/"]').map((i, el) => $(el).text().trim()).get();
+    const genres = $('div.dataItem a[href*="/genres/"]')
+      .map((i, el) => $(el).text().trim())
+      .get();
 
     logger.debug(`Parsed genres: ${genres.length} found`);
 
@@ -31,6 +31,27 @@ const getAuthor = async (authorId, authorUrl) => {
     const ratingCountText = $('span.votes').text().replace(/,/g, '') || '0';
     const ratingCount = parseInt(ratingCountText, 10) || 0;
 
+    const series = $('.bookRow.seriesBookRow').map((i, seriesElement) => {
+      const seriesNameElement = $(seriesElement).find('span[itemprop="name"] a.bookTitle');
+      const seriesName = seriesNameElement.text().trim();
+      const seriesUrl = seriesNameElement.attr('href') || '';
+      const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
+      const seriesId = seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0;
+
+      const bookCountText = $(seriesElement).find('.bookMeta').text().trim();
+      const bookCountMatch = bookCountText.match(/\((\d+)\s+books?\)/);
+      const bookCount = bookCountMatch ? parseInt(bookCountMatch[1]) : 0;
+
+      return {
+        ForeignId: seriesId,
+        Name: seriesName,
+        Url: `https://www.goodreads.com${seriesUrl}`,
+        BookCount: bookCount
+      };
+    }).get();
+
+    logger.debug(`Parsed ${series.length} series`);
+
     const authorData = {
       AverageRating: averageRating,
       Description: desc,
@@ -38,9 +59,10 @@ const getAuthor = async (authorId, authorUrl) => {
       ImageUrl: image,
       Name: name,
       RatingCount: ratingCount,
-      Series: null,
+      Series: series.length > 0 ? series : null,
       Url: authorUrl,
-      Works: null
+      Works: null,
+      Genres: genres,
     };
 
     logger.debug(`Constructed author object for ID: ${authorId}`);
