@@ -122,13 +122,24 @@ export const getBook = async (id) => {
 };
 
 const parsePublicationDate = (dateStr) => {
-  // Remove ordinal indicators (st, nd, rd, th) and convert to ISO format
   const cleanDate = dateStr
-    .replace(/(st|nd|rd|th),?/g, '')
-    .replace('Published ', '');
+    .replace(/\n.*$/, '')  // Remove everything after newline
+    .replace(/Published\s+/, '')  // Remove 'Published' prefix
+    .replace(/(st|nd|rd|th),?/g, '')  // Remove ordinal indicators
+    .trim();
   
-  const date = new Date(cleanDate);
-  return date.toISOString();
+  try {
+    const date = new Date(cleanDate);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    
+    return date.toISOString();
+  } catch (error) {
+    return null;
+  }
 };
 
 export const getEditions = async (workId) => {
