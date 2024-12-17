@@ -4,5 +4,6 @@ RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install
 EXPOSE 80 443
+ENV NODE_ENV=development
 ENV CACHE_DIR=/opt/app/cache
 CMD ["pnpm", "start"]

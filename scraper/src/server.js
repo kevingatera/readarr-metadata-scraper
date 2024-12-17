@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { createLogger } from './logger.js';
 
 const logger = createLogger('SERVER');
+
 function generateCacheKey(fetchFn, args) {
   return `${fetchFn.name}_${crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex')}`;
 }
