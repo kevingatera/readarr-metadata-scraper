@@ -121,6 +121,16 @@ export const getBook = async (id) => {
   }
 };
 
+const parsePublicationDate = (dateStr) => {
+  // Remove ordinal indicators (st, nd, rd, th) and convert to ISO format
+  const cleanDate = dateStr
+    .replace(/(st|nd|rd|th),?/g, '')
+    .replace('Published ', '');
+  
+  const date = new Date(cleanDate);
+  return date.toISOString();
+};
+
 export const getEditions = async (workId) => {
   logger.debug(`Starting fetch for editions of work ID: ${workId}`);
   try {
@@ -137,8 +147,7 @@ export const getEditions = async (workId) => {
       const bookId = bookIdMatch ? bookIdMatch[1] : null;
 
       const publicationInfo = $(element).find('div.dataRow').eq(1).text().trim() || '';
-      const publicationDateMatch = publicationInfo.match(/Published\s+(.+?)(?:\s+by|$)/);
-      const publicationDate = publicationDateMatch ? publicationDateMatch[1].trim() : null;
+      const publicationDate = parsePublicationDate(publicationInfo);
 
       const publisherMatch = publicationInfo.match(/by\s+(.*)/);
       const publisher = publisherMatch ? publisherMatch[1].trim() : '';
