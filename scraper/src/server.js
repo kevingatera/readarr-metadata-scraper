@@ -57,12 +57,8 @@ app.get('/v1/work/:id', async (req, res) => {
     }
 
     const primaryEdition = editions[0];
-
-    const series = [...new Set(
-      editions
-        .filter(edition => edition.Series && edition.Series.length > 0)
-        .flatMap(edition => edition.Series)
-    )];
+    const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
+    const series = primaryBookDetails.Series || [];
 
     const authorIds = editions.flatMap(edition => {
       return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);

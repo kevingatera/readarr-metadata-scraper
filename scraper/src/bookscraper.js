@@ -95,14 +95,14 @@ const parseBookPage = ($, id) => {
       const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
       const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
 
-      if (seriesMatch && seriesMatch[1]) {
+      if (seriesMatch && seriesIdMatch) {
         series = [{
           ForeignId: seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0,
           Name: seriesMatch[1].trim(),
           Position: seriesMatch[2] ? parseInt(seriesMatch[2]) : 0,
-          Url: seriesUrl ? `https://www.goodreads.com${seriesUrl}` : ''
+          Url: seriesUrl || ''
         }];
-        logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position}`);
+        logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position} (ID: ${series[0].ForeignId})`);
       }
     }
   }
