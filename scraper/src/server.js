@@ -83,7 +83,7 @@ app.get('/v1/work/:id', async (req, res) => {
         uniqueAuthorIds
       );
 
-      res.send({
+      return res.send({
         ForeignId: parseInt(workId),
         Title: primaryEdition.Title,
         Url: `https://www.goodreads.com/work/editions/${workId}`,
@@ -103,8 +103,7 @@ app.get('/v1/work/:id', async (req, res) => {
         }
 
         // If successful, treat this single book as an edition
-        // const editions = [bookDetails];
-        res.send({
+        return res.send({
           ForeignId: parseInt(workId),
           Title: bookDetails.Title,
           Url: bookDetails.Url,
@@ -123,7 +122,7 @@ app.get('/v1/work/:id', async (req, res) => {
     }
 
     logger.error(`Failed to fetch work/book ${req.params.id}: ${error}`);
-    res.status(500).send({ error: 'Internal server error' });
+    return res.status(500).send({ error: 'Internal server error' });
   }
 });
 
