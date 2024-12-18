@@ -44,6 +44,49 @@ const parseSeriesPage = ($, id) => {
   };
 };
 
+const extractBookEditions = ($, mainBookDetails) => {
+  const editions = [];
+  const carouselItems = $('.CarouselGroup__item');
+  
+  if (carouselItems.length > 0) {
+    carouselItems.each((_, item) => {
+      const $item = $(item);
+      const link = $item.find('a.BookCard__clickCardTarget');
+      const bookUrl = link.attr('href') || '';
+      const bookIdMatch = bookUrl.match(/\/book\/show\/(\d+)/);
+      const bookId = bookIdMatch ? parseInt(bookIdMatch[1]) : 0;
+      
+      const imageUrl = $item.find('.ResponsiveImage').attr('src') || '';
+      const format = $item.find('.Text__body3').first().text().trim();
+      const publisher = $item.find('.Text__body3.Text__subdued').first().text().trim();
+      const releaseYear = $item.find('.Text__body3.Text__subdued').last().text().trim();
+      
+      editions.push({
+        Asin: null,
+        AverageRating: 0,
+        Contributors: mainBookDetails.Contributors,
+        Description: '',
+        EditionInformation: format,
+        ForeignId: bookId,
+        Format: format,
+        ImageUrl: imageUrl,
+        IsEbook: format.toLowerCase().includes('ebook') || format.toLowerCase().includes('kindle'),
+        Isbn13: null,
+        Language: mainBookDetails.Language,
+        NumPages: null,
+        Publisher: publisher,
+        RatingCount: 0,
+        ReleaseDate: releaseYear,
+        Title: mainBookDetails.Title,
+        Url: `https://www.goodreads.com${bookUrl}`,
+        Series: mainBookDetails.Series || [],
+      });
+    });
+  }
+
+  return editions;
+};
+
 const parseBookPage = ($, id) => {
   const cover = $(".ResponsiveImage").attr("src") || "";
   const workURL = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
@@ -128,6 +171,14 @@ const parseBookPage = ($, id) => {
     }
   }
 
+  const bookEditions = extractBookEditions($, {
+    Contributors: contributors,
+    Language: language,
+    Title: title,
+    Series: series,
+  });
+
+  // Return single edition if no carousel
   return {
     Asin: asin,
     AverageRating: rating,
@@ -148,6 +199,7 @@ const parseBookPage = ($, id) => {
     Url: bookUrl,
     Genres: extractGenres($),
     Series: series || [],
+    Editions: bookEditions,
   };
 };
 

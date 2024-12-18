@@ -36,10 +36,10 @@ app.use(express.json())
 app.get('/v1/author/:id', async (req, res) => {
   try {
     const id = req.params.id;
+    logger.debug(`Endpoint called: /v1/author/${id}`);
     logger.info(`Requesting author ID: ${id}`);
-    logger.info(`Endpoint called: /v1/author/${id}`);
     const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`;
-    
+
     try {
       const authorInfo = await getAuthor(id, goodreadsUrl);
       res.send({ ...authorInfo, Works: [] });
@@ -57,16 +57,14 @@ app.get('/v1/author/:id', async (req, res) => {
 app.get('/v1/work/:id', async (req, res) => {
   try {
     const workId = req.params.id;
-    logger.info(`Getting work ID: ${workId}`);
-    logger.info(`Endpoint called: /v1/work/${workId}`);
-    
-    try {
-      const editions = await fetchWithRetry(getEditions, workId);
-      
-      if (!editions || editions.length === 0) {
-        return res.status(404).send({ error: 'Work not found' });
-      }
+    logger.debug(`Endpoint called: /v1/work/${workId}`);
+    logger.info(`Getting work/book ID: ${workId}`);
 
+    try {
+      // First try to get editions assuming it's a work ID
+      const editions = await fetchWithRetry(getEditions, workId);
+
+      // It was a valid work ID
       const primaryEdition = editions[0];
       const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
       const series = primaryBookDetails.Series || [];
@@ -95,17 +93,58 @@ app.get('/v1/work/:id', async (req, res) => {
         Series: series || [],
         Authors: Object.values(authorResults)
       });
+
     } catch (error) {
       if (error instanceof FetchError && error.status === 404) {
-        return res.status(404).send({ error: 'Work not found' });
+        // Maybe it's a book ID - try getting book details directly
+        const bookDetails = await fetchWithRetry(getBook, workId);
+        if (!bookDetails) {
+          return res.status(404).send({ error: 'Work/Book not found' });
+        }
+
+        // If successful, treat this single book as an edition
+        // const editions = [bookDetails];
+        res.send({
+          ForeignId: parseInt(workId),
+          Title: bookDetails.Title,
+          Url: bookDetails.Url,
+          Genres: bookDetails.Genres || [],
+          RelatedWorks: [],
+          Books: bookDetails.Editions || [],
+          Series: bookDetails.Series || [],
+          Authors: await getAuthorsForEditions(bookDetails.Editions)
+        });
       }
       throw error;
     }
   } catch (error) {
-    logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
+    if (error instanceof FetchError && error.status === 404) {
+      return res.status(404).send({ error: 'Work/Book not found' });
+    }
+
+    logger.error(`Failed to fetch work/book ${req.params.id}: ${error}`);
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
+// Helper function to get authors for editions
+async function getAuthorsForEditions(editions) {
+  const authorIds = editions.flatMap(edition =>
+    edition.Contributors.map(contributor => contributor.ForeignId)
+  ).filter(id => id);
+
+  const uniqueAuthorIds = [...new Set(authorIds)];
+
+  const authorResults = await batchFetchWithRetry(
+    (authorId) => getAuthor(
+      authorId,
+      `https://www.goodreads.com/author/show/${authorId}`
+    ),
+    uniqueAuthorIds
+  );
+
+  return Object.values(authorResults);
+}
 
 let lastRequestTime = 0;
 
