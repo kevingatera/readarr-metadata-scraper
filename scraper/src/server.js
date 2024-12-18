@@ -12,6 +12,7 @@ await mkdir(CACHE_DIR, { recursive: true });
 
 import crypto from 'crypto';
 import { createLogger } from './logger.js';
+import { FetchError } from './utils/fetch.js';
 
 const logger = createLogger('SERVER');
 
@@ -38,11 +39,19 @@ app.get('/v1/author/:id', async (req, res) => {
     logger.info(`Requesting author ID: ${id}`);
     logger.info(`Endpoint called: /v1/author/${id}`);
     const goodreadsUrl = `https://www.goodreads.com/author/show/${id}`;
-    const authorInfo = await getAuthor(id, goodreadsUrl);
-    res.send({ ...authorInfo, Works: [] });
+    
+    try {
+      const authorInfo = await getAuthor(id, goodreadsUrl);
+      res.send({ ...authorInfo, Works: [] });
+    } catch (error) {
+      if (error instanceof FetchError && error.status === 404) {
+        return res.status(404).send({ error: 'Author not found' });
+      }
+      throw error;
+    }
   } catch (error) {
     logger.error(`Failed to fetch author ${req.params.id}: ${error}`);
-    res.status(404).send({ error: 'Author not found' });
+    res.status(500).send({ error: 'Internal server error' });
   }
 });
 app.get('/v1/work/:id', async (req, res) => {
@@ -50,43 +59,51 @@ app.get('/v1/work/:id', async (req, res) => {
     const workId = req.params.id;
     logger.info(`Getting work ID: ${workId}`);
     logger.info(`Endpoint called: /v1/work/${workId}`);
-    const editions = await fetchWithRetry(getEditions, workId);
+    
+    try {
+      const editions = await fetchWithRetry(getEditions, workId);
+      
+      if (!editions || editions.length === 0) {
+        return res.status(404).send({ error: 'Work not found' });
+      }
 
-    if (editions.length === 0) {
-      throw new Error('No editions found');
+      const primaryEdition = editions[0];
+      const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
+      const series = primaryBookDetails.Series || [];
+
+      const authorIds = editions.flatMap(edition => {
+        return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);
+      });
+
+      const uniqueAuthorIds = [...new Set(authorIds)];
+
+      const authorResults = await batchFetchWithRetry(
+        (authorId) => getAuthor(
+          authorId,
+          `https://www.goodreads.com/author/show/${authorId}`
+        ),
+        uniqueAuthorIds
+      );
+
+      res.send({
+        ForeignId: parseInt(workId),
+        Title: primaryEdition.Title,
+        Url: `https://www.goodreads.com/work/editions/${workId}`,
+        Genres: [],
+        RelatedWorks: editions.map(edition => edition.ForeignId),
+        Books: editions,
+        Series: series || [],
+        Authors: Object.values(authorResults)
+      });
+    } catch (error) {
+      if (error instanceof FetchError && error.status === 404) {
+        return res.status(404).send({ error: 'Work not found' });
+      }
+      throw error;
     }
-
-    const primaryEdition = editions[0];
-    const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
-    const series = primaryBookDetails.Series || [];
-
-    const authorIds = editions.flatMap(edition => {
-      return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);
-    });
-
-    const uniqueAuthorIds = [...new Set(authorIds)];
-
-    const authorResults = await batchFetchWithRetry(
-      (authorId) => getAuthor(
-        authorId,
-        `https://www.goodreads.com/author/show/${authorId}`
-      ),
-      uniqueAuthorIds
-    );
-
-    res.send({
-      ForeignId: parseInt(workId),
-      Title: primaryEdition.Title,
-      Url: `https://www.goodreads.com/work/editions/${workId}`,
-      Genres: [],
-      RelatedWorks: editions.map(edition => edition.ForeignId),
-      Books: editions,
-      Series: series || [],
-      Authors: Object.values(authorResults)
-    });
   } catch (error) {
     logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
-    res.status(404).send({ error: 'Work not found' });
+    res.status(500).send({ error: 'Internal server error' });
   }
 });
 
@@ -119,6 +136,11 @@ async function fetchWithRetry(fetchFn, ...args) {
       await saveToCache(cacheKey, result);
       return result;
     } catch (error) {
+      if (error instanceof FetchError && error.status === 404) {
+        logger.error(`404 for ${fetchFn.name} with args: ${args}, not retrying`);
+        throw error;
+      }
+
       lastError = error;
       if (attempt === MAX_RETRIES) {
         logger.error(`All ${MAX_RETRIES} attempts failed for ${fetchFn.name}:`, error);
@@ -148,6 +170,10 @@ async function batchFetchWithRetry(fetchFn, ids) {
       results[id] = result;
     } catch (error) {
       logger.error(`Failed to fetch ${id}:`, error);
+      if (error instanceof FetchError && error.status === 404) {
+        results[id] = null;
+        continue;
+      }
       results[id] = createFallbackResponse(fetchFn, [id]);
     }
   }

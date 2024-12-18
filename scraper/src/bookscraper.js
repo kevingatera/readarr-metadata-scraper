@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { fetchWithTimeout } from './utils/fetch.js';
+import { FetchError, fetchWithTimeout } from './utils/fetch.js';
 import { createLogger } from './logger.js';
 const logger = createLogger('BOOK');
 
@@ -327,6 +327,9 @@ export const getEditions = async (workId) => {
     return editions;
   } catch (error) {
     logger.error(`Error fetching/parsing editions for work ${workId}: ${error}`);
+    if (error instanceof FetchError) {
+      throw error;
+    }
     throw new Error(`Failed to fetch editions for work ${workId}: ${error.message}`);
   }
 };
