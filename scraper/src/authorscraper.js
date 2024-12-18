@@ -31,15 +31,11 @@ const parseAuthorPage = ($, authorId, authorUrl) => {
     const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
     const seriesId = seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0;
 
-    const bookCountText = $(seriesElement).find('.bookMeta').text().trim();
-    const bookCountMatch = bookCountText.match(/\((\d+)\s+books?\)/);
-    const bookCount = bookCountMatch ? parseInt(bookCountMatch[1]) : 0;
-
     return {
       ForeignId: seriesId,
-      Name: seriesName,
-      Url: `https://www.goodreads.com${seriesUrl}`,
-      BookCount: bookCount
+      Title: seriesName,
+      Description: '',
+      LinkItems: []
     };
   }).get();
 
@@ -52,7 +48,7 @@ const parseAuthorPage = ($, authorId, authorUrl) => {
     ImageUrl: image,
     Name: name,
     RatingCount: ratingCount,
-    Series: series.length > 0 ? series : null,
+    Series: series,
     Url: authorUrl,
     Works: null,
     Genres: genres,
