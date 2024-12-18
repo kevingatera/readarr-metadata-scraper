@@ -3,17 +3,39 @@ import { fetchWithTimeout } from './utils/fetch.js';
 import { createLogger } from './logger.js';
 const logger = createLogger('AUTHOR');
 
+const parseBookFromList = ($, element) => {
+  const $element = $(element);
+  const titleElement = $element.find('.bookTitle');
+  const title = titleElement.find('span[itemprop="name"]').text().trim();
+  const url = titleElement.attr('href');
+  const bookIdMatch = url.match(/show\/(\d+)/);
+  const bookId = bookIdMatch ? parseInt(bookIdMatch[1]) : 0;
+
+  const imageUrl = $element.find('img.bookCover').attr('src');
+  
+  const ratingText = $element.find('.minirating').text();
+  const ratingMatch = ratingText.match(/(\d+\.\d+)\s+avg/);
+  const averageRating = ratingMatch ? parseFloat(ratingMatch[1]) : 0;
+  
+  const ratingCountMatch = ratingText.match(/—\s*([\d,]+)\s+ratings/);
+  const ratingCount = ratingCountMatch ? parseInt(ratingCountMatch[1].replace(/,/g, '')) : 0;
+
+  return {
+    ForeignId: bookId,
+    Title: title,
+    Url: `https://www.goodreads.com${url}`,
+    ImageUrl: imageUrl,
+    AverageRating: averageRating,
+    RatingCount: ratingCount
+  };
+};
+
 const parseAuthorPage = ($, authorId, authorUrl) => {
   const image = $("div[itemtype='http://schema.org/Person'] > div > a > img").attr("src") || '';
   logger.debug(`Parsed image: ${image ? image : 'No image found'}`);
 
   const name = $("h1.authorName > span").text().trim() || 'Unknown Author';
   logger.debug(`Parsed name: ${name}`);
-
-  const genres = $('div.dataItem a[href*="/genres/"]')
-    .map((i, el) => $(el).text().trim())
-    .get();
-  logger.debug(`Parsed genres: ${genres.length} found`);
 
   const desc = $(".aboutAuthorInfo span").first().html() || '';
   logger.debug(`Parsed description: ${desc ? 'Description found' : 'No description'}`);
@@ -24,34 +46,21 @@ const parseAuthorPage = ($, authorId, authorUrl) => {
   const ratingCountText = $('span.votes').text().replace(/,/g, '') || '0';
   const ratingCount = parseInt(ratingCountText, 10) || 0;
 
-  const series = $('.bookRow.seriesBookRow').map((i, seriesElement) => {
-    const seriesNameElement = $(seriesElement).find('span[itemprop="name"] a.bookTitle');
-    const seriesName = seriesNameElement.text().trim();
-    const seriesUrl = seriesNameElement.attr('href') || '';
-    const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
-    const seriesId = seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0;
-
-    return {
-      ForeignId: seriesId,
-      Title: seriesName,
-      Description: '',
-      LinkItems: []
-    };
-  }).get();
-
-  logger.debug(`Parsed ${series.length} series`);
+  // Parse books from the list page
+  const books = $('table.tableList tr[itemtype="http://schema.org/Book"]').map((i, element) => 
+    parseBookFromList($, element)
+  ).get();
+  logger.debug(`Parsed ${books.length} books`);
 
   return {
-    AverageRating: averageRating,
-    Description: desc,
     ForeignId: parseInt(authorId) || 0,
     ImageUrl: image,
     Name: name,
+    Description: desc,
     RatingCount: ratingCount,
-    Series: series,
+    AverageRating: averageRating,
     Url: authorUrl,
-    Works: null,
-    Genres: genres,
+    Works: books
   };
 };
 
