@@ -60,7 +60,7 @@ app.get('/v1/work/:id', async (req, res) => {
 
     const series = [...new Set(
       editions
-        .filter(edition => edition.Series)
+        .filter(edition => edition.Series && edition.Series.length > 0)
         .flatMap(edition => edition.Series)
     )];
 
@@ -85,7 +85,7 @@ app.get('/v1/work/:id', async (req, res) => {
       Genres: [],
       RelatedWorks: editions.map(edition => edition.ForeignId),
       Books: editions,
-      Series: primaryEdition.Series || [],
+      Series: series || [],
       Authors: Object.values(authorResults)
     });
   } catch (error) {

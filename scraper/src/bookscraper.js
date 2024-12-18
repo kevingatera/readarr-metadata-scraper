@@ -89,19 +89,21 @@ const parseBookPage = ($, id) => {
 
   if (seriesElement.length > 0) {
     const seriesLink = seriesElement.find('a');
-    const seriesText = seriesLink.text().trim();
-    const seriesUrl = seriesLink.attr('href') || '';
-    const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
-    const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
+    if (seriesLink.length > 0) {
+      const seriesText = seriesLink.text().trim();
+      const seriesUrl = seriesLink.attr('href') || '';
+      const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
+      const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
 
-    if (seriesMatch) {
-      series = [{
-        ForeignId: seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0,
-        Name: seriesMatch[1].trim(),
-        Position: seriesMatch[2] ? parseInt(seriesMatch[2]) : 0,
-        Url: `https://www.goodreads.com${seriesUrl}`
-      }];
-      logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position}`);
+      if (seriesMatch && seriesMatch[1]) {
+        series = [{
+          ForeignId: seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0,
+          Name: seriesMatch[1].trim(),
+          Position: seriesMatch[2] ? parseInt(seriesMatch[2]) : 0,
+          Url: seriesUrl ? `https://www.goodreads.com${seriesUrl}` : ''
+        }];
+        logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position}`);
+      }
     }
   }
 
@@ -124,7 +126,7 @@ const parseBookPage = ($, id) => {
     Title: title,
     Url: bookUrl,
     Genres: extractGenres($),
-    Series: series,
+    Series: series || [],
   };
 };
 
@@ -184,7 +186,7 @@ export const getEditions = async (workId) => {
       let series = null;
       const seriesMatch = title.match(/(.*?)\s*\((.*?)\s*#(\d+)\)/);
 
-      if (seriesMatch) {
+      if (seriesMatch && seriesMatch[2] && seriesMatch[3]) {
         series = [{
           ForeignId: 0,
           Name: seriesMatch[2].trim(),
@@ -296,7 +298,7 @@ export const getEditions = async (workId) => {
         ReleaseDate: publicationDate || null,
         Title: title,
         Url: `https://www.goodreads.com/book/show/${bookId}`,
-        Series: series,
+        Series: series || [],
       });
     });
 
