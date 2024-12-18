@@ -89,9 +89,19 @@ app.get('/v1/work/:id', async (req, res) => {
         Url: `https://www.goodreads.com/work/editions/${workId}`,
         Genres: [],
         RelatedWorks: editions.map(edition => edition.ForeignId),
-        Books: editions,
+        Books: [primaryBookDetails],
         Series: series || [],
-        Authors: Object.values(authorResults)
+        Authors: [{
+          ForeignId: primaryBookDetails.Contributors[0].ForeignId,
+          Name: primaryBookDetails.Contributors[0].Name || "",
+          Description: "",
+          ImageUrl: "",
+          Url: `https://www.goodreads.com/author/show/${primaryBookDetails.Contributors[0].ForeignId}`,
+          RatingCount: 0,
+          AverageRating: 0,
+          Works: [],
+          Series: []
+        }]
       });
 
     } catch (error) {
@@ -111,7 +121,17 @@ app.get('/v1/work/:id', async (req, res) => {
           RelatedWorks: [],
           Books: bookDetails.Editions || [],
           Series: bookDetails.Series || [],
-          Authors: await getAuthorsForEditions(bookDetails.Editions)
+          Authors: [{
+            ForeignId: bookDetails.Contributors[0].ForeignId,
+            Name: bookDetails.Contributors[0].Name || "",
+            Description: "",
+            ImageUrl: "",
+            Url: bookDetails.Contributors[0].Url,
+            RatingCount: 0,
+            AverageRating: 0,
+            Works: [],
+            Series: []
+          }]
         });
       }
       throw error;
