@@ -11,6 +11,39 @@ const extractGenres = ($) => {
   return genres;
 };
 
+const parseSeriesPage = ($, id) => {
+  const seriesLink = $('h3.Text__title3.Text__italic a');
+  if (seriesLink.length === 0) {
+    return null;
+  }
+
+  const seriesText = seriesLink.text().trim();
+  const seriesUrl = seriesLink.attr('href') || '';
+  const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
+  const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
+
+  if (!seriesMatch || !seriesIdMatch) {
+    return null;
+  }
+
+  const seriesId = parseInt(seriesIdMatch[1]);
+  const position = seriesMatch[2] ? parseInt(seriesMatch[2]) : 0;
+  const title = seriesMatch[1].trim();
+
+  return {
+    ForeignId: seriesId,
+    Title: title,
+    Url: seriesUrl,
+    Description: '',
+    LinkItems: [{
+      ForeignWorkId: parseInt(id),
+      PositionInSeries: position.toString(),
+      SeriesPosition: position,
+      Primary: true
+    }]
+  };
+};
+
 const parseBookPage = ($, id) => {
   const cover = $(".ResponsiveImage").attr("src") || "";
   const workURL = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
@@ -88,22 +121,10 @@ const parseBookPage = ($, id) => {
   let series = null;
 
   if (seriesElement.length > 0) {
-    const seriesLink = seriesElement.find('a');
-    if (seriesLink.length > 0) {
-      const seriesText = seriesLink.text().trim();
-      const seriesUrl = seriesLink.attr('href') || '';
-      const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
-      const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
-
-      if (seriesMatch && seriesIdMatch) {
-        series = [{
-          ForeignId: seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0,
-          Name: seriesMatch[1].trim(),
-          Position: seriesMatch[2] ? parseInt(seriesMatch[2]) : 0,
-          Url: seriesUrl || ''
-        }];
-        logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position} (ID: ${series[0].ForeignId})`);
-      }
+    const seriesData = parseSeriesPage($, id);
+    if (seriesData) {
+      series = [seriesData];
+      logger.debug(`Parsed series: ${seriesData.Title} #${seriesData.LinkItems[0].SeriesPosition} (ID: ${seriesData.ForeignId})`);
     }
   }
 
