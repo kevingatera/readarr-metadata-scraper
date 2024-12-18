@@ -58,6 +58,12 @@ app.get('/v1/work/:id', async (req, res) => {
 
     const primaryEdition = editions[0];
 
+    const series = [...new Set(
+      editions
+        .filter(edition => edition.Series)
+        .flatMap(edition => edition.Series)
+    )];
+
     const authorIds = editions.flatMap(edition => {
       return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);
     });
@@ -76,10 +82,10 @@ app.get('/v1/work/:id', async (req, res) => {
       ForeignId: parseInt(workId),
       Title: primaryEdition.Title,
       Url: `https://www.goodreads.com/work/editions/${workId}`,
-      Genres: ["horror"],
-      RelatedWorks: [],
+      Genres: [],
+      RelatedWorks: editions.map(edition => edition.ForeignId),
       Books: editions,
-      Series: [],
+      Series: primaryEdition.Series || [],
       Authors: Object.values(authorResults)
     });
   } catch (error) {
@@ -196,16 +202,16 @@ app.post('*', async (req, res) => {
         ForeignId: book.ForeignId,
         Title: book.Title,
         Url: book.Url,
-        Genres: ["horror"],
+        Genres: book?.Genres || [],
         RelatedWorks: [],
         Books: [book],
-        Series: [],
+        Series: book.Series || [],
         Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId])
       }));
 
     const response = {
       Works: works,
-      Series: [],
+      Series: works.flatMap(work => work.Series),
       Authors: Object.values(authorResults)
     };
 

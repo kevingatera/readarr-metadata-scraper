@@ -84,6 +84,27 @@ const parseBookPage = ($, id) => {
     Role: "Author"
   }));
 
+  const seriesElement = $('h3.Text__title3.Text__italic');
+  let series = null;
+
+  if (seriesElement.length > 0) {
+    const seriesLink = seriesElement.find('a');
+    const seriesText = seriesLink.text().trim();
+    const seriesUrl = seriesLink.attr('href') || '';
+    const seriesMatch = seriesText.match(/(.*?)(?:\s+#(\d+))?$/);
+    const seriesIdMatch = seriesUrl.match(/\/series\/(\d+)/);
+
+    if (seriesMatch) {
+      series = [{
+        ForeignId: seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0,
+        Name: seriesMatch[1].trim(),
+        Position: seriesMatch[2] ? parseInt(seriesMatch[2]) : 0,
+        Url: `https://www.goodreads.com${seriesUrl}`
+      }];
+      logger.debug(`Parsed series: ${series[0].Name} #${series[0].Position}`);
+    }
+  }
+
   return {
     Asin: asin,
     AverageRating: rating,
@@ -103,6 +124,7 @@ const parseBookPage = ($, id) => {
     Title: title,
     Url: bookUrl,
     Genres: extractGenres($),
+    Series: series,
   };
 };
 
@@ -159,6 +181,19 @@ export const getEditions = async (workId) => {
 
     $('div.elementList').each((index, element) => {
       const title = $(element).find('a.bookTitle').text().trim() || 'Unknown Title';
+      let series = null;
+      const seriesMatch = title.match(/(.*?)\s*\((.*?)\s*#(\d+)\)/);
+
+      if (seriesMatch) {
+        series = [{
+          ForeignId: 0,
+          Name: seriesMatch[2].trim(),
+          Position: parseInt(seriesMatch[3]),
+          Url: ''
+        }];
+        logger.debug(`Parsed edition series: ${series[0].Name} #${series[0].Position}`);
+      }
+
       const bookLink = $(element).find('a.bookTitle').attr('href') || '';
       const bookIdMatch = bookLink.match(/\/book\/show\/(\d+)/);
       const bookId = bookIdMatch ? bookIdMatch[1] : null;
@@ -261,6 +296,7 @@ export const getEditions = async (workId) => {
         ReleaseDate: publicationDate || null,
         Title: title,
         Url: `https://www.goodreads.com/book/show/${bookId}`,
+        Series: series,
       });
     });
 
