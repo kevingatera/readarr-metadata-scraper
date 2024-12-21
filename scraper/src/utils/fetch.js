@@ -13,18 +13,19 @@ export class FetchError extends Error {
   }
 }
 
-export async function fetchWithTimeout(url) {
+export async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await fetch(url, {
-        method: "GET",
+        ...options,
+        signal: controller.signal,
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-        signal: controller.signal
+          ...options.headers
+        }
       });
 
       if (response.status === 404) {
@@ -32,7 +33,8 @@ export async function fetchWithTimeout(url) {
       }
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
       return await response.text();
