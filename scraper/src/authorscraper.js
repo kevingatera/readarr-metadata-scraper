@@ -112,8 +112,8 @@ const parseAuthorPage = async ($, authorId, authorUrl) => {
     RatingCount: ratingCount,
     AverageRating: averageRating,
     Url: authorUrl,
-    Works: allWorks,
-    Series: series,
+    Works: allWorks || [],
+    Series: series || [],
   };
 };
 
@@ -134,35 +134,32 @@ const getAuthor = async (authorId, authorUrl) => {
 };
 
 export function parseWorksFromSeriesListPage(html) {
-  console.debug('Parsing series list page...')
-  const $ = cheerio.load(html)
+  logger.debug('Parsing series list page...');
+  const $ = cheerio.load(html);
 
-  const books = []
+  const books = [];
 
   $('.responsiveBook').each((i, el) => {
-    const $book = $(el)
-    const bookHtml = $book.html()
-    // console.log(bookHtml)
-
-    const bookLink = $book.find('a.gr-h3').first()
-    const bookUrl = bookLink.attr('href')
-    const bookId = bookLink.attr('href')?.match(/show\/(\d+)/)?.[1]
+    const $book = $(el);
+    const bookLink = $book.find('a.gr-h3').first();
+    const bookUrl = bookLink.attr('href');
+    const bookId = bookLink.attr('href')?.match(/show\/(\d+)/)?.[1];
 
     // Extract image URL
-    const imageUrl = $book.find('img.responsiveBook__img').attr('src')
+    const imageUrl = $book.find('img.responsiveBook__img').attr('src');
 
     // Extract ratings data
-    const rating = $book.find('.communityRating__stars').attr('aria-label')?.match(/[\d.]+/)?.[0]
-    const ratingsCount = $book.find('.gr-metaText:contains("Ratings")').text().match(/[\d,]+/)?.[0]?.replace(/,/g, '')
-    const reviewsCount = $book.find('.gr-metaText:contains("Reviews")').text().match(/[\d,]+/)?.[0]?.replace(/,/g, '')
+    const rating = $book.find('.communityRating__stars').attr('aria-label')?.match(/[\d.]+/)?.[0];
+    const ratingsCount = $book.find('.gr-metaText:contains("Ratings")').text().match(/[\d,]+/)?.[0]?.replace(/,/g, '');
+    const reviewsCount = $book.find('.gr-metaText:contains("Reviews")').text().match(/[\d,]+/)?.[0]?.replace(/,/g, '');
 
     // Extract author info
-    const authorLink = $book.find('a[href*="/author/"]')
-    const authorUrl = authorLink.attr('href')
-    const authorId = authorUrl?.match(/\/author\/show\/(\d+)/)?.[1]
+    const authorLink = $book.find('a[href*="/author/"]');
+    const authorUrl = authorLink.attr('href');
+    const authorId = authorUrl?.match(/\/author\/show\/(\d+)/)?.[1];
 
     // Extract description
-    const description = $book.find('.expandableHtml span').first().text()
+    const description = $book.find('.expandableHtml span').first().text();
 
     // Find related books in the same series or by the same author
     const relatedBooks = $('.responsiveBook')
@@ -180,7 +177,7 @@ export function parseWorksFromSeriesListPage(html) {
         const $relatedBook = $(relatedEl);
         const relatedBookLink = $relatedBook.find('a.gr-h3').first();
         const relatedBookUrl = relatedBookLink.attr('href');
-        const relatedBookId = relatedBookUrl?.match(/show\/(\d+)/)?.[1]
+        const relatedBookId = relatedBookUrl?.match(/show\/(\d+)/)?.[1];
 
         return {
           ForeignId: parseInt(relatedBookId) || 0,
@@ -213,13 +210,22 @@ export function parseWorksFromSeriesListPage(html) {
         Url: authorUrl ? `https://www.goodreads.com${authorUrl}` : null
       }] : [],
       Series: series,
-      Books: relatedBooks, // Books in the same series or by the same author
+      Books: relatedBooks.map(rb => ({
+        ...rb,
+        AverageRating: 0,
+        RatingCount: 0,
+        Contributors: authorId ? [{
+          ForeignId: parseInt(authorId),
+          Name: authorLink.text().trim(),
+          Url: authorUrl ? `https://www.goodreads.com${authorUrl}` : null
+        }] : []
+      })),
       Genres: [], // Would need separate request to get genres
       RelatedWorks: relatedBooks // Same as Books for now
-    })
-  })
+    });
+  });
 
-  return books
+  return books;
 }
 
 export default getAuthor;
