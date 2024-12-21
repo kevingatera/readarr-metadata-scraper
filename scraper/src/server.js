@@ -172,11 +172,14 @@ let lastRequestTime = 0;
 async function rateLimit() {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
-  if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
-    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY - timeSinceLastRequest));
+  const waitTime = Math.max(0, RATE_LIMIT_DELAY - timeSinceLastRequest);
+  
+  if (waitTime > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitTime));
   }
+  
   lastRequestTime = Date.now();
-  logger.debug(`Rate limiting: waiting ${RATE_LIMIT_DELAY - timeSinceLastRequest}ms`);
+  logger.debug(`Rate limiting: waiting ${waitTime}ms`);
 }
 
 async function fetchWithRetry(fetchFn, ...args) {
