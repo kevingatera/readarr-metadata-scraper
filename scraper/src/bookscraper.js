@@ -180,9 +180,12 @@ const parseBookPage = ($, id) => {
 
   // Return single edition if no carousel
   return {
-    Asin: asin,
+    Asin: asin || "",
     AverageRating: rating,
-    Contributors: contributors,
+    Contributors: contributors.map(c => ({
+      ForeignId: c.ForeignId,
+      Role: c.Role
+    })),
     Description: description,
     EditionInformation: format,
     ForeignId: parseInt(id) || 0,
@@ -192,14 +195,11 @@ const parseBookPage = ($, id) => {
     Isbn13: isbn13,
     Language: language,
     NumPages: numPages,
-    Publisher: publisher,
+    Publisher: publisher || "",
     RatingCount: ratingCount,
-    ReleaseDate: releaseDate,
+    ReleaseDate: null,
     Title: title,
-    Url: bookUrl,
-    Genres: extractGenres($),
-    Series: series || [],
-    Editions: bookEditions,
+    Url: bookUrl
   };
 };
 
@@ -356,7 +356,10 @@ export const getEditions = async (workId) => {
       editions.push({
         Asin: asin,
         AverageRating: averageRating,
-        Contributors: contributors,
+        Contributors: contributors.map(c => ({
+          ForeignId: c.ForeignId,
+          Role: c.Role
+        })),
         Description: '',
         EditionInformation: format,
         ForeignId: parseInt(bookId) || 0,
