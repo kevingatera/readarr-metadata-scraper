@@ -69,19 +69,21 @@ app.get('/v1/work/:id', async (req, res) => {
       const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
       const series = primaryBookDetails.Series || [];
 
-      const authorIds = editions.flatMap(edition => {
-        return edition.Contributors.map(contributor => contributor.ForeignId).filter(id => id);
-      });
+      // const authorIds = editions.flatMap(edition => {
+      //   return edition.Contributors
+      //     .filter(contributor => contributor.Role === "Author")
+      //     .map(contributor => contributor.ForeignId);
+      // });
 
-      const uniqueAuthorIds = [...new Set(authorIds)];
+      // const uniqueAuthorIds = [...new Set(authorIds)];
 
-      const authorResults = await batchFetchWithRetry(
-        (authorId) => getAuthor(
-          authorId,
-          `https://www.goodreads.com/author/show/${authorId}`
-        ),
-        uniqueAuthorIds
-      );
+      // const authorResults = await batchFetchWithRetry(
+      //   (authorId) => getAuthor(
+      //     authorId,
+      //     `https://www.goodreads.com/author/show/${authorId}`
+      //   ),
+      //   uniqueAuthorIds
+      // );
 
       return res.send({
         ForeignId: parseInt(workId),

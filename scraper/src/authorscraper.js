@@ -102,7 +102,7 @@ const parseAuthorPage = async ($, authorId, authorUrl) => {
   const series = await parseSeriesFromPage($);
 
   // Aggregate works from all series
-  const allWorks = series.flatMap(s => s.Works);
+  const allWorks = [...books, ...series.flatMap(s => s.Works)];
 
   return {
     ForeignId: parseInt(authorId) || 0,
