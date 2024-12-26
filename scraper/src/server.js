@@ -42,7 +42,7 @@ app.get('/v1/author/:id', async (req, res) => {
 
     try {
       const authorInfo = await getAuthor(id, goodreadsUrl);
-      res.send({ ...authorInfo, Works: [] });
+      res.send(authorInfo);
     } catch (error) {
       if (error instanceof FetchError && error.status === 404) {
         return res.status(404).send({ error: 'Author not found' });

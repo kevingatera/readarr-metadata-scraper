@@ -37,8 +37,8 @@ const parseSeriesPage = ($, id) => {
     Description: '',
     LinkItems: [{
       ForeignWorkId: parseInt(id),
-      PositionInSeries: position.toString(),
-      SeriesPosition: position,
+      PositionInSeries: position ? position.toString() : "0",
+      SeriesPosition: 0,
       Primary: true
     }]
   };

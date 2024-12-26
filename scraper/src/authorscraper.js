@@ -20,13 +20,18 @@ const parseBookFromList = ($, element) => {
   const ratingCountMatch = ratingText.match(/—\s*([\d,]+)\s+ratings/);
   const ratingCount = ratingCountMatch ? parseInt(ratingCountMatch[1].replace(/,/g, '')) : 0;
 
+  const publishText = $element.find('.greyText.smallText').text();
+  const publishYearMatch = publishText.match(/published\s+(\d{4})/);
+  const publishDate = publishYearMatch ? new Date(publishYearMatch[1]).toISOString() : null;
+
   return {
     ForeignId: bookId,
     Title: title,
     Url: `https://www.goodreads.com${url}`,
     ImageUrl: imageUrl,
     AverageRating: averageRating,
-    RatingCount: ratingCount
+    RatingCount: ratingCount,
+    _publishDate: publishDate
   };
 };
 
@@ -46,34 +51,66 @@ const parseSeriesPage = async (seriesUrl) => {
 
 const parseSeriesFromPage = async ($) => {
   const seriesElements = $('div.bookRow.seriesBookRow');
-  const series = [];
+  const seriesMap = new Map();
 
   for (let i = 0; i < seriesElements.length; i++) {
     const $seriesElement = $(seriesElements[i]);
-
-    // Find series title link
-    const seriesTitleElement = $seriesElement.find('.seriesDesc .bookTitle');
-    const seriesTitle = seriesTitleElement.text().trim();
-    const seriesUrl = seriesTitleElement.attr('href');
-
+    const seriesTitle = $seriesElement.find('.seriesDesc .bookTitle').text().trim();
+    const seriesUrl = $seriesElement.find('.seriesDesc .bookTitle').attr('href');
     const seriesIdMatch = seriesUrl ? seriesUrl.match(/series\/(\d+)/) : null;
     const seriesId = seriesIdMatch ? parseInt(seriesIdMatch[1]) : 0;
 
-    if (seriesUrl) {
+    if (seriesUrl && !seriesMap.has(seriesId)) {
       const fullSeriesUrl = `https://www.goodreads.com${seriesUrl}`;
       const works = await parseSeriesPage(fullSeriesUrl);
 
-      series.push({
+      seriesMap.set(seriesId, {
         ForeignId: seriesId,
         Title: seriesTitle,
         Url: fullSeriesUrl,
         Works: works
       });
+    } else {
+      logger.warn(`Duplicate series ID found: ${seriesId} for series ${seriesTitle}`);
     }
   }
 
-  logger.debug(`Parsed ${series.length} series with their works`);
-  return series;
+  logger.debug(`Parsed ${seriesMap.size} unique series with their works`);
+  return Array.from(seriesMap.values());
+};
+
+const mergeWorks = (works) => {
+  const workMap = new Map();
+
+  works.forEach(work => {
+    const existingWork = workMap.get(work.ForeignId);
+    
+    if (existingWork) {
+      // Merge the works, keeping non-null/non-empty values
+      workMap.set(work.ForeignId, {
+        ...existingWork,
+        ...work,
+        // Merge arrays if they exist
+        Genres: [...new Set([...(existingWork.Genres || []), ...(work.Genres || [])])],
+        RelatedWorks: [...new Set([...(existingWork.RelatedWorks || []), ...(work.RelatedWorks || [])])],
+        Books: [...(existingWork.Books || []), ...(work.Books || [])].filter((book, index, self) => 
+          index === self.findIndex(b => b.ForeignId === book.ForeignId)
+        ),
+        // Merge other arrays as needed
+        Series: [...new Set([...(existingWork.Series || []), ...(work.Series || [])])],
+        // Take the non-empty value for scalar properties
+        Description: work.Description || existingWork.Description,
+        ImageUrl: work.ImageUrl || existingWork.ImageUrl,
+        ReleaseDate: work.ReleaseDate || existingWork.ReleaseDate,
+        AverageRating: work.AverageRating || existingWork.AverageRating,
+        RatingCount: Math.max(work.RatingCount || 0, existingWork.RatingCount || 0)
+      });
+    } else {
+      workMap.set(work.ForeignId, work);
+    }
+  });
+
+  return Array.from(workMap.values());
 };
 
 const parseAuthorPage = async ($, authorId, authorUrl) => {
@@ -101,19 +138,79 @@ const parseAuthorPage = async ($, authorId, authorUrl) => {
   // Add series to the return object
   const series = await parseSeriesFromPage($);
 
+  // Ensure series IDs are unique before mapping
+  const uniqueSeries = series.reduce((acc, s) => {
+    // Only add if ForeignId is not already present
+    if (!acc.some(existing => existing.ForeignId === s.ForeignId)) {
+      acc.push(s);
+    } else {
+      logger.warn(`Duplicate series ID found: ${s.ForeignId} for series ${s.Title}`);
+    }
+    return acc;
+  }, []);
+
   // Aggregate works from all series
-  const allWorks = [...books, ...series.flatMap(s => s.Works)];
+  const allWorks = [...books, ...uniqueSeries.flatMap(s => s.Works)];
+  const mergedWorks = mergeWorks(allWorks);
 
   return {
     ForeignId: parseInt(authorId) || 0,
-    ImageUrl: image,
     Name: name,
+    TitleSlug: `${authorId}-${name.replaceAll(' ', '_')}`,
     Description: desc,
+    ImageUrl: image,
+    Url: authorUrl,
+    ReviewCount: 0,
     RatingCount: ratingCount,
     AverageRating: averageRating,
-    Url: authorUrl,
-    Works: allWorks || [],
-    Series: series || [],
+    Works: mergedWorks.map(work => ({
+      ForeignId: work.ForeignId,
+      Title: work.Title,
+      TitleSlug: `${work.ForeignId}-${work.Title.replaceAll(' ', '_')}`,
+      ReleaseDate: work._publishDate || null,
+      Url: work.Url,
+      Genres: work.Genres || [],
+      RelatedWorks: [],
+      Books: [{
+        ForeignId: work.ForeignId,
+        ForeignWorkId: work.ForeignId,
+        Title: work.Title,
+        TitleSlug: `${work.ForeignId}-${work.Title.replaceAll(' ', '_')}`,
+        OriginalTitle: '',
+        WorkTitleSlug: `${work.ForeignId}-${work.Title.replaceAll(' ', '_')}`,
+        Description: '',
+        CountryCode: '',
+        Language: '',
+        Format: 'paperback',
+        EditionInformation: '',
+        Publisher: '',
+        IsEbook: false,
+        NumPages: 0,
+        ReviewCount: 0,
+        RatingCount: work.RatingCount,
+        AverageRating: work.AverageRating,
+        ImageUrl: work.ImageUrl,
+        Url: work.Url,
+        ReleaseDate: work._publishDate,
+        OriginalReleaseDate: work._publishDate,
+        Contributors: [{
+          ForeignId: parseInt(authorId),
+          Role: 'Author'
+        }]
+      }]
+    })),
+    Series: uniqueSeries.map((s, seriesIndex) => ({
+      ForeignId: s.ForeignId,
+      Title: s.Title,
+      Description: '',
+      LinkItems: s.Works.map((w, workIndex) => ({
+        ForeignSeriesId: s.ForeignId,
+        ForeignWorkId: w.ForeignId,
+        PositionInSeries: (workIndex + 1).toString(),
+        Primary: true,
+        SeriesPosition: seriesIndex + 1
+      }))
+    }))
   };
 };
 
@@ -194,6 +291,9 @@ export function parseWorksFromSeriesListPage(html) {
       Works: relatedBooks
     }] : [];
 
+    const releaseDateMatch = $book.find('.gr-metaText:contains("published")').text().replace('published ', '').trim();
+    const releaseDate = releaseDateMatch ? new Date(releaseDateMatch).toISOString() : null;
+
     books.push({
       ForeignId: parseInt(bookId) || 0,
       Title: bookLink.text().trim(),
@@ -203,7 +303,7 @@ export function parseWorksFromSeriesListPage(html) {
       RatingCount: ratingsCount ? parseInt(ratingsCount) : 0,
       ReviewCount: reviewsCount ? parseInt(reviewsCount) : 0,
       Description: description,
-      ReleaseDate: $book.find('.gr-metaText:contains("published")').text().replace('published ', '').trim(),
+      ReleaseDate: releaseDate,
       Authors: authorId ? [{
         ForeignId: parseInt(authorId),
         Name: authorLink.text().trim(),
