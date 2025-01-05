@@ -61,89 +61,120 @@ app.get('/v1/work/:id', async (req, res) => {
     logger.info(`Getting work/book ID: ${workId}`);
 
     try {
-      // First try to get editions assuming it's a work ID
-      const editions = await fetchWithRetry(getEditions, workId);
+      const bookDetails = await fetchWithRetry(getBook, workId);
 
-      // It was a valid work ID
-      const primaryEdition = editions[0];
-      const primaryBookDetails = await fetchWithRetry(getBook, primaryEdition.ForeignId);
-      const series = primaryBookDetails.Series || [];
+      const work = {
+        _id: workId,
+        title: bookDetails.Title,
+        subtitle: null,
+        covers: [bookDetails.ImageUrl].filter(Boolean),
+        authors: bookDetails.Contributors
+          .filter(c => c.Role === "Author")
+          .map(a => a.ForeignId),
+        links: [{
+          url: bookDetails.Url,
+          title: "Goodreads"
+        }],
+        ratingCount: bookDetails.RatingCount,
+        averageRating: bookDetails.AverageRating,
+        description: bookDetails.Description,
+        notes: null,
+        firstPublishYear: bookDetails.ReleaseDate ? new Date(bookDetails.ReleaseDate).getFullYear() : null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
 
-      // const authorIds = editions.flatMap(edition => {
-      //   return edition.Contributors
-      //     .filter(contributor => contributor.Role === "Author")
-      //     .map(contributor => contributor.ForeignId);
-      // });
-
-      // const uniqueAuthorIds = [...new Set(authorIds)];
-
-      // const authorResults = await batchFetchWithRetry(
-      //   (authorId) => getAuthor(
-      //     authorId,
-      //     `https://www.goodreads.com/author/show/${authorId}`
-      //   ),
-      //   uniqueAuthorIds
-      // );
-
-      return res.send({
-        ForeignId: parseInt(workId),
-        Title: primaryEdition.Title,
-        Url: `https://www.goodreads.com/work/editions/${workId}`,
-        Genres: [],
-        RelatedWorks: editions.map(edition => edition.ForeignId),
-        Books: [primaryBookDetails],
-        Series: series || [],
-        Authors: [{
-          ForeignId: primaryBookDetails.Contributors[0].ForeignId,
-          Name: primaryBookDetails.Contributors[0].Name || "",
-          Description: "",
-          ImageUrl: "",
-          Url: `https://www.goodreads.com/author/show/${primaryBookDetails.Contributors[0].ForeignId}`,
-          RatingCount: 0,
-          AverageRating: 0,
-          Works: [],
-          Series: []
-        }]
-      });
-
+      return res.send(work);
     } catch (error) {
       if (error instanceof FetchError && error.status === 404) {
-        // Maybe it's a book ID - try getting book details directly
-        const bookDetails = await fetchWithRetry(getBook, workId);
-        if (!bookDetails) {
-          return res.status(404).send({ error: 'Work/Book not found' });
-        }
-
-        // If successful, treat this single book as an edition
-        return res.send({
-          ForeignId: parseInt(workId),
-          Title: bookDetails.Title,
-          Url: bookDetails.Url,
-          Genres: bookDetails.Genres || [],
-          RelatedWorks: [],
-          Books: bookDetails.Editions || [],
-          Series: bookDetails.Series || [],
-          Authors: [{
-            ForeignId: bookDetails.Contributors[0].ForeignId,
-            Name: bookDetails.Contributors[0].Name || "",
-            Description: "",
-            ImageUrl: "",
-            Url: bookDetails.Contributors[0].Url,
-            RatingCount: 0,
-            AverageRating: 0,
-            Works: [],
-            Series: []
-          }]
-        });
+        return res.status(404).send({ error: 'Work not found' });
       }
       throw error;
     }
   } catch (error) {
-    if (error instanceof FetchError && error.status === 404) {
-      return res.status(404).send({ error: 'Work/Book not found' });
+    logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
+    return res.status(500).send({ error: 'Internal server error' });
+  }
+});
+
+app.get('/v1/edition/:id', async (req, res) => {
+  try {
+    const workId = req.params.id;
+    logger.debug(`Endpoint called: /v1/edition/${workId}`);
+
+    const editions = await fetchWithRetry(getEditions, workId);
+    if (!editions?.length) {
+      return res.status(404).send({ error: 'No editions found' });
     }
 
-    logger.error(`Failed to fetch work/book ${req.params.id}: ${error}`);
+    // Transform to match Edition type
+    const transformedEditions = editions.map(edition => {
+      const publishDate = edition.ReleaseDate ? new Date(edition.ReleaseDate) : undefined;
+
+      // Extract series info from title
+      const seriesInfo = [];
+      const seriesMatch = edition.Title.match(/(.*?)\s*\((.*?)\s*#(\d+)\)/);
+      if (seriesMatch) {
+        seriesInfo.push({
+          name: seriesMatch[2].trim(),
+          position: parseInt(seriesMatch[3])
+        });
+      }
+
+      return {
+        _id: edition.ForeignId.toString(),
+        title: edition.Title.replace(/\s*\(.*?\)\s*$/, '').trim(), // Remove series info from title
+        description: edition.Description,
+        notes: '',
+        editionName: edition.EditionInformation,
+
+        series: seriesInfo,
+        works: [workId], // Link back to parent work
+
+        ratingCount: edition.RatingCount,
+        averageRating: edition.AverageRating,
+
+        authors: edition.Contributors
+          .filter(c => c.Role === "Author")
+          .map(a => a.ForeignId.toString()),
+
+        publishCountry: '',
+        publishDate: publishDate,
+        publishers: edition.Publisher ? [edition.Publisher] : [],
+
+        pagination: edition.NumPages ? `${edition.NumPages} pages` : undefined,
+        numberOfPages: edition.NumPages,
+
+        ids: {
+          isbn13: edition.Isbn13,
+          isbn10: null,
+          lccn: null,
+          oclcNumbers: [],
+          localId: []
+        },
+
+        relatedLinks: [{
+          url: edition.Url,
+          title: "Goodreads"
+        }],
+
+        covers: edition.ImageUrl ? [edition.ImageUrl] : [],
+
+        languages: edition.Language ? [edition.Language] : [],
+
+        physicalFormat: edition.Format,
+
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+
+    return res.send(transformedEditions);
+  } catch (error) {
+    if (error instanceof FetchError && error.status === 404) {
+      return res.status(404).send({ error: 'Editions not found' });
+    }
+    logger.error(`Failed to fetch editions ${req.params.id}: ${error}`);
     return res.status(500).send({ error: 'Internal server error' });
   }
 });
@@ -173,11 +204,11 @@ async function rateLimit() {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
   const waitTime = Math.max(0, RATE_LIMIT_DELAY - timeSinceLastRequest);
-  
+
   if (waitTime > 0) {
     await new Promise(resolve => setTimeout(resolve, waitTime));
   }
-  
+
   lastRequestTime = Date.now();
   logger.debug(`Rate limiting: waiting ${waitTime}ms`);
 }

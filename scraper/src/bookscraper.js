@@ -47,7 +47,7 @@ const parseSeriesPage = ($, id) => {
 const extractBookEditions = ($, mainBookDetails) => {
   const editions = [];
   const carouselItems = $('.CarouselGroup__item');
-  
+
   if (carouselItems.length > 0) {
     carouselItems.each((_, item) => {
       const $item = $(item);
@@ -55,12 +55,12 @@ const extractBookEditions = ($, mainBookDetails) => {
       const bookUrl = link.attr('href') || '';
       const bookIdMatch = bookUrl.match(/\/book\/show\/(\d+)/);
       const bookId = bookIdMatch ? parseInt(bookIdMatch[1]) : 0;
-      
+
       const imageUrl = $item.find('.ResponsiveImage').attr('src') || '';
       const format = $item.find('.Text__body3').first().text().trim();
       const publisher = $item.find('.Text__body3.Text__subdued').first().text().trim();
       const releaseYear = $item.find('.Text__body3.Text__subdued').last().text().trim();
-      
+
       editions.push({
         Asin: null,
         AverageRating: 0,
@@ -124,8 +124,13 @@ const parseBookPage = ($, id) => {
   const publisherMatch = publisherText.match(/Published\s+.*\s+by\s+(.*)/);
   const publisher = publisherMatch ? publisherMatch[1] : '';
 
-  const releaseDateMatch = publisherText.match(/Published\s+(.*)\s+by/);
-  const releaseDate = releaseDateMatch ? releaseDateMatch[1] : null;
+  const publicationInfo = $('p[data-testid="publicationInfo"]').text().trim();
+  const firstPublishMatch = publicationInfo.match(/First published\s+(.+?)(?:\s+by|$)/);
+  const publishMatch = publicationInfo.match(/Published\s+(.+?)(?:\s+by|$)/);
+
+  const releaseDate = firstPublishMatch ?
+    parsePublicationDate(firstPublishMatch[1]) :
+    (publishMatch ? parsePublicationDate(publishMatch[1]) : null);
 
   const language = 'eng';
 
@@ -160,6 +165,14 @@ const parseBookPage = ($, id) => {
     Role: "Author"
   }));
 
+  // Extract original title if present
+  const originalTitle = $('.DescListItem')
+    .filter((_, el) => $(el).find('dt').text().trim() === 'Original title')
+    .find('dd .TruncatedContent__text')
+    .text()
+    .trim() || null;
+
+  // Keep existing series extraction logic as it works better
   const seriesElement = $('h3.Text__title3.Text__italic');
   let series = null;
 
@@ -197,9 +210,11 @@ const parseBookPage = ($, id) => {
     NumPages: numPages,
     Publisher: publisher || "",
     RatingCount: ratingCount,
-    ReleaseDate: null,
+    ReleaseDate: releaseDate,
     Title: title,
-    Url: bookUrl
+    Url: bookUrl,
+    OriginalTitle: originalTitle,
+    Series: series,
   };
 };
 
