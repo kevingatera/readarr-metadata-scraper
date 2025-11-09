@@ -3,6 +3,7 @@ import http from "http";
 import https from "https";
 import { getBook, getEditions } from './bookscraper.js'
 import getAuthor from "./authorscraper.js";
+import { searchGoodreads } from "./searchscraper.js";
 import { getFromCache, saveToCache } from './cache.js';
 
 import fs from 'fs';
@@ -33,6 +34,70 @@ const credentials = { key: privateKey, cert: certificate };
 const app = express()
 app.use(express.json())
 
+app.get('/v1/search', async (req, res) => {
+  try {
+    const query = req.query.q;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).send({ error: 'Query parameter "q" is required' });
+    }
+
+    logger.debug(`Endpoint called: /v1/search?q=${query}`);
+    logger.info(`Searching for: "${query}"`);
+
+    const results = await fetchWithRetry(searchGoodreads, query);
+    res.send(results);
+  } catch (error) {
+    logger.error(`Failed to search for "${req.query.q}": ${error}`);
+    res.status(500).send({ error: 'Internal server error' });
+  }
+});
+
+app.get('/v1/book/:id', async (req, res) => {
+  try {
+    const bookId = req.params.id;
+    logger.debug(`Endpoint called: /v1/book/${bookId}`);
+    logger.info(`Getting book details for ID: ${bookId}`);
+
+    const book = await fetchWithRetry(getBook, bookId);
+
+    if (!book) {
+      return res.status(404).send({ error: 'Book not found' });
+    }
+
+    // Get author details
+    const authorIds = book.Contributors.map(c => c.ForeignId).filter(id => id);
+    const authorResults = await batchFetchWithRetry(
+      (authorId) => getAuthor(
+        authorId,
+        `https://www.goodreads.com/author/show/${authorId}`
+      ),
+      authorIds
+    );
+
+    // Return WorkResource directly (not wrapped in Works array)
+    // Readarr expects a single WorkResource object with Books and Authors at top level
+    const work = {
+      ForeignId: book.ForeignId,
+      Title: book.Title,
+      Url: book.Url,
+      Genres: book?.Genres || [],
+      RelatedWorks: [],
+      Books: [book],
+      Series: book.Series || [],
+      Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId]).filter(Boolean)
+    };
+
+    return res.send(work);
+  } catch (error) {
+    if (error instanceof FetchError && error.status === 404) {
+      return res.status(404).send({ error: 'Book not found' });
+    }
+    logger.error(`Failed to fetch book ${req.params.id}: ${error}`);
+    return res.status(500).send({ error: 'Internal server error' });
+  }
+});
+
 app.get('/v1/author/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -60,38 +125,40 @@ app.get('/v1/work/:id', async (req, res) => {
     logger.debug(`Endpoint called: /v1/work/${workId}`);
     logger.info(`Getting work/book ID: ${workId}`);
 
-    try {
-      const bookDetails = await fetchWithRetry(getBook, workId);
+    const book = await fetchWithRetry(getBook, workId);
 
-      const work = {
-        _id: workId,
-        title: bookDetails.Title,
-        subtitle: null,
-        covers: [bookDetails.ImageUrl].filter(Boolean),
-        authors: bookDetails.Contributors
-          .filter(c => c.Role === "Author")
-          .map(a => a.ForeignId),
-        links: [{
-          url: bookDetails.Url,
-          title: "Goodreads"
-        }],
-        ratingCount: bookDetails.RatingCount,
-        averageRating: bookDetails.AverageRating,
-        description: bookDetails.Description,
-        notes: null,
-        firstPublishYear: bookDetails.ReleaseDate ? new Date(bookDetails.ReleaseDate).getFullYear() : null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-
-      return res.send(work);
-    } catch (error) {
-      if (error instanceof FetchError && error.status === 404) {
-        return res.status(404).send({ error: 'Work not found' });
-      }
-      throw error;
+    if (!book) {
+      return res.status(404).send({ error: 'Work not found' });
     }
+
+    // Get author details
+    const authorIds = book.Contributors.map(c => c.ForeignId).filter(id => id);
+    const authorResults = await batchFetchWithRetry(
+      (authorId) => getAuthor(
+        authorId,
+        `https://www.goodreads.com/author/show/${authorId}`
+      ),
+      authorIds
+    );
+
+    // Return WorkResource directly (not wrapped in Works array)
+    // Readarr's PollBook expects a single WorkResource object with Books and Authors at top level
+    const work = {
+      ForeignId: book.ForeignId,
+      Title: book.Title,
+      Url: book.Url,
+      Genres: book?.Genres || [],
+      RelatedWorks: [],
+      Books: [book],
+      Series: book.Series || [],
+      Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId]).filter(Boolean)
+    };
+
+    return res.send(work);
   } catch (error) {
+    if (error instanceof FetchError && error.status === 404) {
+      return res.status(404).send({ error: 'Work not found' });
+    }
     logger.error(`Failed to fetch work ${req.params.id}: ${error}`);
     return res.status(500).send({ error: 'Internal server error' });
   }
@@ -264,11 +331,7 @@ async function batchFetchWithRetry(fetchFn, ids) {
       results[id] = result;
     } catch (error) {
       logger.error(`Failed to fetch ${id}:`, error);
-      if (error instanceof FetchError && error.status === 404) {
-        results[id] = null;
-        continue;
-      }
-      results[id] = createFallbackResponse(fetchFn, [id]);
+      results[id] = null;
     }
   }
 
@@ -277,14 +340,28 @@ async function batchFetchWithRetry(fetchFn, ids) {
 
 app.post('*', async (req, res) => {
   try {
+    // Normalize body to always be an array
+    let bookIds;
+    if (Array.isArray(req.body)) {
+      bookIds = req.body;
+    } else if (req.body != null) {
+      bookIds = [req.body];
+    } else {
+      return res.status(400).send({
+        Works: [],
+        Series: [],
+        Authors: []
+      });
+    }
+    
     logger.info({
       msg: 'Processing POST request',
       body: req.body,
-      bodyCount: req.body?.length || 'N/A',
+      bodyCount: bookIds.length,
       requestSize: JSON.stringify(req.body).length
     });
 
-    const bookResults = await batchFetchWithRetry(getBook, req.body);
+    const bookResults = await batchFetchWithRetry(getBook, bookIds);
     logger.info({
       msg: 'Book fetch results',
       bookCount: Object.keys(bookResults).length
@@ -314,6 +391,7 @@ app.post('*', async (req, res) => {
     });
 
     const works = Object.values(bookResults)
+      .filter(book => book != null)
       .map(book => ({
         ForeignId: book.ForeignId,
         Title: book.Title,
@@ -322,13 +400,13 @@ app.post('*', async (req, res) => {
         RelatedWorks: [],
         Books: [book],
         Series: book.Series || [],
-        Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId])
+        Authors: book.Contributors.map(contributor => authorResults[contributor.ForeignId]).filter(Boolean)
       }));
 
     const response = {
       Works: works,
       Series: works.flatMap(work => work.Series),
-      Authors: Object.values(authorResults)
+      Authors: Object.values(authorResults).filter(Boolean)
     };
 
     logger.info({

@@ -88,6 +88,12 @@ const extractBookEditions = ($, mainBookDetails) => {
 };
 
 const parseBookPage = ($, id) => {
+  // Check for error page
+  const errorPage = $('.ErrorPage__title');
+  if (errorPage.length > 0) {
+    throw new FetchError('Book not found', 404);
+  }
+
   const cover = $(".ResponsiveImage").attr("src") || "";
   const workURL = $('meta[property="og:url"]').attr("content") || `https://www.goodreads.com/book/show/${id}`;
   const title = $('h1[data-testid="bookTitle"]').text().trim() || `Unknown Book ${id}`;
